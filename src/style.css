@@ -1,0 +1,167 @@
+/* 화면 배치: 위쪽 고정 막대(도구 · 파괴력 · 월/주 이동) + 남은 높이를 꽉 채우는 달력 */
+:root{
+  --bg:#f6f7f9; --paper:#ffffff; --ink:#1b2230; --mute:#6b7488; --line:#e2e5ec; --today:#2f5bd3;
+  --sun:#c94a3a; --sat:#3a62c4;
+  --f-body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* 안드로이드는 Capacitor가 --safe-area-inset-* 를 넣어 줌 */
+  --it:var(--safe-area-inset-top,env(safe-area-inset-top,0px));
+  --ib:var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px));
+  --il:var(--safe-area-inset-left,env(safe-area-inset-left,0px));
+  --ir:var(--safe-area-inset-right,env(safe-area-inset-right,0px));
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#12151c; --paper:#1a1f29; --ink:#e7eaf1; --mute:#98a1b3; --line:#2b3240; --today:#7d9cf0;
+  --sun:#e57a6b; --sat:#8aa2f0; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none;
+  background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body);
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none!important}
+
+/* ── 위쪽 막대 ── */
+#chrome{position:relative;z-index:40;flex:none;display:flex;flex-direction:column;gap:6px;
+  padding:calc(6px + var(--it)) max(8px,var(--ir)) 6px max(8px,var(--il));background:var(--bg)}
+.gbar{align-self:center;max-width:100%;overflow-x:auto;scrollbar-width:none;display:flex;align-items:center;gap:2px;padding:4px;
+  background:var(--paper);background:color-mix(in srgb,var(--paper) 88%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.12)}
+.gbar button{font-size:.8rem;font-weight:600;display:flex;align-items:center;gap:5px;padding:7px 10px;border:none;border-radius:10px;background:transparent;color:var(--ink);white-space:nowrap;touch-action:manipulation;flex:none}
+.gbar button svg{width:16px;height:16px;flex:none}
+@media (hover:hover){.gbar button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}}
+.gbar button[data-tool][aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.gbar button[data-tool="laser"][aria-pressed="true"]{background:#d42a2a;color:#fff}
+.gbar button[data-tool="bomb"][aria-pressed="true"]{background:#d9701a;color:#fff}
+.gbar button[data-tool="hammer"][aria-pressed="true"]{background:#5b6470;color:#fff}
+.gbar button[data-tool="fire"][aria-pressed="true"]{background:#e2511c;color:#fff}
+.gbar button[data-tool="water"][aria-pressed="true"]{background:#2a7fd4;color:#fff}
+#gZero[data-mode="grav"] .ic-zero,#gZero[data-mode="zero"] .ic-grav{display:none}
+.gsep{width:1px;align-self:stretch;margin:5px 3px;background:var(--line);flex:none}
+@media (max-width:760px){.gbar button{padding:7px 8px}.gbar button .lbl{display:none}.gsep{margin:5px 1px}}
+
+.grow2{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+.gpow{display:flex;align-items:center;gap:10px;padding:2px 12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;font-size:.78rem}
+.gpl{font-weight:600;color:var(--ink);white-space:nowrap}
+.gtrack{position:relative;width:min(190px,40vw);height:24px;cursor:pointer;touch-action:none;outline:none}
+.gtrack::before{content:"";position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:var(--line)}
+.gfill{position:absolute;left:0;top:10px;height:4px;border-radius:2px;background:linear-gradient(90deg,#f0b24a,#e2611c 55%,#c41f1f)}
+.gthumb{position:absolute;top:3px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:var(--paper);border:2px solid #d9561c;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.gtrack:focus-visible .gthumb{outline:2px solid var(--today);outline-offset:2px}
+.gpv{min-width:3.4em;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:#d9561c}
+/* 물 내리기: 물이 차는 화면 아래쪽에 떠 있음 (위쪽 막대 높이를 바꾸지 않도록) */
+.gdrain{position:fixed;left:50%;bottom:calc(14px + var(--ib));transform:translateX(-50%);z-index:41;
+  font-size:.86rem;font-weight:600;display:flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;border:1px solid #2a7fd4;
+  background:var(--paper);background:color-mix(in srgb,#2a7fd4 16%,var(--paper));color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.18);touch-action:manipulation}
+.gdrain svg{width:16px;height:16px;flex:none}
+.gdrain:disabled{opacity:.65;cursor:default}
+
+.nav{display:flex;align-items:center;gap:6px;min-height:34px}
+.nav h1{margin:0 2px;font-size:1.12rem;font-weight:700;white-space:nowrap;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.grow{flex:1}
+.navbtn{width:32px;height:32px;padding:0;display:grid;place-items:center;border-radius:9px;border:1px solid var(--line);background:var(--paper);flex:none}
+.navbtn svg{width:18px;height:18px}
+.pill{padding:5px 12px;border-radius:9px;border:1px solid var(--line);background:var(--paper);font-size:.84rem;font-weight:600;flex:none}
+.seg{display:flex;padding:2px;border-radius:10px;border:1px solid var(--line);background:var(--paper);flex:none}
+.seg button{border:0;background:transparent;padding:3px 12px;border-radius:8px;font-size:.84rem;font-weight:600;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+@media (max-width:380px){.nav{gap:4px}.nav h1{font-size:.98rem}.pill{padding:5px 8px}.seg button{padding:3px 9px}}
+
+.ghint{position:absolute;left:50%;top:100%;transform:translate(-50%,2px);max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:.76rem;color:var(--ink);background:var(--paper);border:1px solid var(--line);padding:3px 12px;border-radius:999px;
+  box-shadow:0 4px 16px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:opacity .3s}
+.ghint.show{opacity:1}
+
+/* ── 달력 ── */
+.stage{flex:1;min-height:0;padding:2px max(8px,var(--ir)) calc(8px + var(--ib)) max(8px,var(--il))}
+.month-view{display:flex;flex-direction:column;gap:3px}
+.dows{flex:none;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.dow{font-size:.72rem;font-weight:600;color:var(--mute);text-align:center;padding:1px 0}
+.dow.sun{color:var(--sun)}.dow.sat{color:var(--sat)}
+.mgrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.day{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:3px;margin:0;display:flex;flex-direction:column;justify-content:flex-start;gap:2px;
+  text-align:left;min-width:0;min-height:0;overflow:hidden}
+.day.past{opacity:.55}
+.day.out{opacity:.38}
+.day.today{border:2px solid var(--today)}
+.dn{flex:none;font-size:.72rem;line-height:1.3;font-family:var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+.day.sun .dn{color:var(--sun)}.day.sat .dn{color:var(--sat)}
+.day.today .dn{color:var(--today);font-weight:700}
+.chip{flex:none;font-size:.7rem;line-height:1.2;padding:2px 4px;border-radius:4px;display:flex;flex-direction:column;min-width:0}
+.chip b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip span{font-family:var(--f-mono);font-size:.64rem;font-variant-numeric:tabular-nums}
+.more{flex:none;font-size:.64rem;line-height:1.2;font-weight:600;color:var(--mute);padding-left:2px}
+@media (max-width:640px){.mgrid,.dows{gap:2px}.day{padding:2px;border-radius:4px}.chip{font-size:.6rem;padding:1px 2px;border-radius:3px}.chip span{font-size:.54rem;letter-spacing:-.02em}}
+
+/* 주 단위: 위에서부터 일 → 토 */
+.week-view{display:grid;grid-template-rows:repeat(7,minmax(0,1fr));gap:4px}
+.wrow{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:5px 8px 5px 4px;min-height:0;overflow:hidden}
+.wrow.past{opacity:.55}
+.wrow.today{border:2px solid var(--today)}
+.wd{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15}
+.wd b{font-size:.7rem;font-weight:600;color:var(--mute)}
+.wd span{font-size:1.2rem;font-weight:700;font-variant-numeric:tabular-nums}
+.wrow.sun .wd b,.wrow.sun .wd span{color:var(--sun)}
+.wrow.sat .wd b,.wrow.sat .wd span{color:var(--sat)}
+.wrow.today .wd span{color:var(--today)}
+.wev{display:flex;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;gap:4px;min-width:0;min-height:0;overflow:hidden}
+.wev.fit{align-content:center}
+.wev .chip{max-width:100%;font-size:.8rem;padding:3px 8px;border-radius:6px}
+.wev .chip span{font-size:.68rem;letter-spacing:0}
+.wev .more{align-self:center;font-size:.74rem}
+
+/* ── 날짜 상세 ── */
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(0,0,0,.18);border-radius:16px 16px 0 0;
+  padding-top:16px;padding-bottom:calc(20px + var(--ib));padding-left:max(16px,var(--il));padding-right:max(16px,var(--ir));max-height:60vh;overflow:auto;z-index:20;
+  user-select:text;-webkit-user-select:text}
+.sheet-in{max-width:640px;margin:0 auto}
+.sheet h3{margin:0 0 10px;font-size:1.05rem;display:flex;justify-content:space-between;align-items:center}
+.sheet h3 button{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px 10px}
+.ev{display:grid;grid-template-columns:4px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ev:last-child{border-bottom:none}
+.ev .bar{border-radius:2px}
+.ev .t{font-family:var(--f-mono);font-size:.82rem;color:var(--mute);font-variant-numeric:tabular-nums}
+.ev .n{font-weight:600}
+.ev .d{font-size:.85rem;color:var(--mute)}
+.ev .notes{white-space:pre-line}
+.ev-none{color:var(--mute);margin:0}
+
+/* ── 권한 안내 ── */
+.gate{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:var(--bg)}
+.gate-in{max-width:340px;text-align:center}
+.gate h2{font-size:1.3rem;margin:0 0 8px}
+.gate p{color:var(--mute);margin:0 0 20px;font-size:.95rem;text-wrap:pretty}
+.gate button{border:0;background:var(--ink);color:var(--bg);font-weight:700;padding:12px 22px;border-radius:12px;font-size:1rem}
+
+/* ── 부수기 레이어 (아티팩트와 같음) ── */
+html.grav-on,html.grav-on body{overflow:hidden;overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}
+html.grav-on #stage{visibility:hidden}
+html.grav-on[data-gtool="grab"]{cursor:grab}
+html.grav-on[data-gtool="laser"]{cursor:crosshair}
+html.grav-on[data-gtool="bomb"]{cursor:cell}
+html.grav-on[data-gtool="hammer"]{cursor:pointer}
+html.grav-on[data-gtool="fire"],html.grav-on[data-gtool="water"]{cursor:crosshair}
+/* ── 손으로 짓누르기 (3D) ── */
+.gbar #gCrushBtn{color:#8a4b14}
+@media (prefers-color-scheme:dark){.gbar #gCrushBtn{color:#f0b47a}}
+html.crush-on #stage{visibility:hidden}
+html.crush-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
+html.crush-on #sheet{display:none}
+#gCrush{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:45;touch-action:none}
+#gCrushUI{position:fixed;inset:0;z-index:46;pointer-events:none}
+#gCrushUI .cr-title{position:absolute;left:0;right:0;top:calc(28px + var(--it));text-align:center;font-size:clamp(34px,10vw,64px);font-weight:900;letter-spacing:.08em;
+  color:var(--ink);opacity:0;transform:translateY(-14px) scale(.96);transition:opacity .45s,transform .45s cubic-bezier(.2,1.6,.4,1)}
+#gCrushUI .cr-title.on{opacity:1;transform:none;animation:crPulse 1.6s ease-in-out .5s infinite}
+@keyframes crPulse{50%{transform:scale(1.05)}}
+#gCrushUI .cr-vig{position:absolute;inset:0;background:radial-gradient(140% 85% at 50% 50%,transparent 52%,rgba(8,10,16,.42) 100%);opacity:0;transition:opacity .4s}
+#gCrushUI .cr-vig.on{opacity:1}
+#gCrushUI .cr-flash{position:absolute;inset:0;background:#fff8ec;opacity:0;transition:opacity .25s}
+#gCrushUI .cr-flash.on{opacity:.85;transition:none}
+#gCrushUI .cr-again{position:absolute;left:50%;bottom:calc(28px + var(--ib));transform:translate(-50%,10px);pointer-events:auto;border:0;border-radius:999px;padding:13px 28px;
+  font-size:1rem;font-weight:700;background:var(--ink);color:var(--bg);box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transition:opacity .4s,transform .4s}
+#gCrushUI .cr-again.on{opacity:1;transform:translate(-50%,0)}
+
+/* 아래부터: 그을린 자국 → 붙어 있는 칸 → 떨어진 조각 → 효과 */
+#gDecal,#gWall,#gFree,#gFx{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
+#gDecal{z-index:13}#gWall{z-index:14}#gFree{z-index:15}#gFx{z-index:16}
