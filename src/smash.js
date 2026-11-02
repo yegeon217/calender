@@ -1041,8 +1041,13 @@ export function startSmash(opt){
   addEventListener("click",block,true);addEventListener("keydown",key);addEventListener("contextmenu",ctx);
   G.off=()=>{removeEventListener("pointerdown",down,{capture:true});removeEventListener("pointermove",move);removeEventListener("pointerup",up);removeEventListener("pointercancel",up);
     removeEventListener("click",block,true);removeEventListener("keydown",key);removeEventListener("contextmenu",ctx);};
-  setTool(TOOL,!opt.hint);gravBtn();
+  setTool(TOOL,!opt.hint);gravBtn();schedulePrewarm();
   G.raf=requestAnimationFrame(loop);}
+// 짓누르기를 한가할 때 미리 준비해 둠 (3D 코드·손 모델·이 달력 칸 모양의 종이 꾸기기) → 버튼을 누른 뒤 기다림이 짧음
+let preT=0;
+// 3D 장면(영역전개 마무리)이 아직 화면에 있으면 끝난 뒤로 미룸
+function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>{if(!G)return;if(document.getElementById("gCrush")){schedulePrewarm();return;}const pcs=G.pieces.filter(p=>!p.dead).map(p=>({W:p.W,H:p.H}));
+  import("./crush.js").then(m=>m.prewarm(pcs)).catch(()=>{});};window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
 // fade: 불·연기·그을음 캔버스를 바로 지우지 않고 서서히 사라지게 (짓누르기로 넘어갈 때)
 export function stopSmash(fade){
   if(!G)return;cancelAnimationFrame(G.raf);sStopAll();G.off();

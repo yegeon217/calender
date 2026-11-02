@@ -1,0 +1,11 @@
+{
+  "appId": "com.smashcalendar.app",
+  "appName": "캘린더 부수기",
+  "webDir": "dist",
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

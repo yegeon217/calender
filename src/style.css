@@ -161,6 +161,23 @@ html.crush-on #sheet{display:none}
 #gCrushUI .cr-again{position:absolute;left:50%;bottom:calc(28px + var(--ib));transform:translate(-50%,10px);pointer-events:auto;border:0;border-radius:999px;padding:13px 28px;
   font-size:1rem;font-weight:700;background:var(--ink);color:var(--bg);box-shadow:0 8px 24px rgba(0,0,0,.25);opacity:0;transition:opacity .4s,transform .4s}
 #gCrushUI .cr-again.on{opacity:1;transform:translate(-50%,0)}
+/* 영역전개: 순간 반전 · 글자 (붓글씨 느낌의 명조, 없으면 굵은 고딕) */
+#gCrushUI .cr-inv{position:absolute;inset:0;background:#fff;mix-blend-mode:difference;opacity:0}
+#gCrushUI .cr-inv.on{opacity:1}
+#gCrushUI .cr-dom{position:absolute;left:0;right:0;top:calc(9vh + var(--it));text-align:center;color:#f6f1ea;opacity:0;will-change:transform,opacity;
+  font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif}
+#gCrushUI .cr-dom small{display:block;font-size:clamp(13px,3.7vw,22px);font-weight:700;letter-spacing:.9em;padding-left:.9em;color:#ff4a36;
+  text-shadow:0 0 12px rgba(255,40,20,.6)}
+#gCrushUI .cr-dom b{display:block;margin-top:10px;font-size:clamp(42px,13vw,96px);font-weight:900;line-height:1.05;letter-spacing:.01em;
+  text-shadow:0 0 1px #000,0 5px 0 rgba(0,0,0,.55),0 8px 28px rgba(0,0,0,.9),0 0 46px rgba(255,36,20,.5)}
+#gCrushUI .cr-dom i{display:block;margin:16px auto 0;width:min(72vw,440px);height:2px;background:linear-gradient(90deg,transparent,#ff4a36 30%,#ffd2c8 50%,#ff4a36 70%,transparent);transform:scaleX(0)}
+#gCrushUI .cr-dom.on{animation:domIn .55s cubic-bezier(.2,.9,.25,1) forwards}
+#gCrushUI .cr-dom.on b{animation:domPress 2.6s ease-out .45s both}
+#gCrushUI .cr-dom.on i{transition:transform .8s .12s cubic-bezier(.2,.8,.2,1);transform:scaleX(1)}
+#gCrushUI .cr-dom.off{animation:none;opacity:0;transform:scale(1.08);transition:opacity .45s,transform .45s}
+@keyframes domIn{0%{opacity:0;transform:scale(1.6)}12%{opacity:.35}28%{opacity:1;transform:scale(.97)}
+  36%{transform:translate(3px,-2px) scale(.98)}44%{transform:translate(-3px,2px) scale(.99)}52%{transform:translate(2px,1px)}100%{opacity:1;transform:none}}
+@keyframes domPress{from{transform:scale(1)}to{transform:scale(1.045)}}
 
 /* 아래부터: 그을린 자국 → 붙어 있는 칸 → 떨어진 조각 → 효과 */
 #gDecal,#gWall,#gFree,#gFx{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
