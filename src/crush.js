@@ -7,6 +7,7 @@ import { loadHand, preloadHand } from "./hand.js";
 import { bakeCrumple, sampleCrumple, BALL_R } from "./crumple.js";
 import { clamp, lerp, rnd, seg, sstep, eOut, eIn, eInOut, eBack, V, buzz, noiseTex, radialTex } from "./fx-util.js";
 import { buildDomain } from "./domain.js";
+import { buildKick } from "./kick.js";
 
 // ── 소리 (WebAudio 합성) ──
 function makeSound(get) {
@@ -43,8 +44,6 @@ function makeSound(get) {
     clink() { const a = A(); if (!a) return; const t = a.c.currentTime; ring(a, t, 1450, 0.4, 1.4); noise(a, t, "highpass", 5000, 3000, 1, 0.25, 0.001, 0.08); },
     clunk() { const a = A(); if (!a) return; const t = a.c.currentTime; tone(a, t, "sine", 160, 60, 0.7, 0.004, 0.25); ring(a, t, 880, 0.22, 0.9); },
     ting() { const a = A(); if (!a) return; ring(a, a.c.currentTime, 1880, 0.32, 1.6); },
-    bang() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "highpass", 1400, 900, 0.7, 1.0, 0.002, 0.16); noise(a, t, "lowpass", 900, 120, 0.7, 0.95, 0.003, 0.55); tone(a, t, "sine", 160, 40, 0.9, 0.003, 0.35); },
-    slowmo() { const a = A(); if (!a) return; const t = a.c.currentTime; tone(a, t, "sine", 70, 42, 0.5, 0.15, 1.4); noise(a, t, "lowpass", 200, 80, 0.8, 0.35, 0.2, 1.4); },
     impact() { const a = A(); if (!a) return; const t = a.c.currentTime; ring(a, t, 410, 0.55, 2.2); tone(a, t, "sine", 120, 30, 0.8, 0.004, 0.9); noise(a, t, "lowpass", 600, 60, 0.6, 0.7, 0.01, 1.2); },
     shatter() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "highpass", 3200, 2000, 0.7, 0.9, 0.002, 0.35); noise(a, t, "bandpass", 2400, 900, 1.2, 0.6, 0.004, 0.6); ring(a, t, 690, 0.35, 1.2);
       for (let i = 0; i < 46; i++) { const f = rnd(2600, 8200); tone(a, t + 0.05 + Math.pow(Math.random(), 1.6) * 1.8, "sine", f, f * 0.99, rnd(0.02, 0.07), 0.001, rnd(0.04, 0.16)); } },
@@ -65,6 +64,21 @@ function makeSound(get) {
       noise(a, t, "bandpass", 240, 1150, 2.2, 0.6, d * 0.85, d + 0.3); noise(a, t, "bandpass", 700, 2700, 5, 0.22, d * 0.9, d + 0.3); noise(a, t, "lowpass", 150, 260, 0.8, 0.55, d * 0.6, d + 0.3); },
     launch() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", 500, 3800, 0.9, 1, 0.04, 1.3); noise(a, t, "lowpass", 600, 60, 0.7, 0.8, 0.01, 1.1); tone(a, t, "sine", 90, 30, 0.8, 0.005, 0.9); },
     close() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "lowpass", 2000, 150, 0.8, 0.35, 0.3, 0.9); ring(a, t + 0.35, 196, 0.12, 2.4); },
+    // ── 공 차고 저격하기 ──
+    clang(k = 1) { const a = A(); if (!a) return; const t = a.c.currentTime; ring(a, t, 470 * rnd(0.95, 1.05), 0.26 * k, 0.9); tone(a, t, "sine", 140, 55, 0.6 * k, 0.003, 0.2); noise(a, t, "lowpass", 1400, 200, 0.7, 0.4 * k, 0.002, 0.12); },
+    kick() { const a = A(); if (!a) return; const t = a.c.currentTime; tone(a, t, "sine", 105, 38, 1, 0.003, 0.32); noise(a, t, "lowpass", 1100, 120, 0.7, 0.85, 0.002, 0.22); noise(a, t, "bandpass", 2600, 900, 1.2, 0.35, 0.001, 0.06); ring(a, t + 0.005, 610, 0.2, 0.8); },
+    step(v = 1) { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", rnd(1500, 2600), 700, 1.1, 0.13 * v, 0.002, 0.06); tone(a, t, "sine", 85, 45, 0.28 * v, 0.003, 0.09); },
+    skid() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", 1800, 500, 0.9, 0.32, 0.03, 0.5); noise(a, t, "lowpass", 400, 120, 0.7, 0.25, 0.02, 0.4); },
+    cloth() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", 1200, 2500, 0.8, 0.12, 0.06, 0.3); },
+    rack() { const a = A(); if (!a) return; const t = a.c.currentTime; for (const [d, f] of [[0, 2600], [0.11, 3400], [0.2, 2200]]) { noise(a, t + d, "bandpass", f, f * 0.7, 3, 0.45, 0.001, 0.035); ring(a, t + d, f * 0.62, 0.05, 0.12); } },
+    zoom() { const a = A(); if (!a) return; const t = a.c.currentTime; for (let i = 0; i < 4; i++) noise(a, t + i * 0.045, "highpass", 4800, 4000, 1, 0.12, 0.001, 0.012); },
+    breeze(d) { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", 320, 520, 0.7, 0.16, d * 0.3, d); },
+    breath(out) { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t, "bandpass", out ? 900 : 1300, out ? 500 : 1700, 0.7, out ? 0.16 : 0.1, out ? 0.05 : 0.25, out ? 0.7 : 0.45); },
+    heart() { const a = A(); if (!a) return; const t = a.c.currentTime; tone(a, t, "sine", 58, 40, 0.5, 0.004, 0.13); tone(a, t + 0.15, "sine", 52, 38, 0.32, 0.004, 0.12); },
+    sniper() { const a = A(); if (!a) return; const t = a.c.currentTime;
+      noise(a, t, "highpass", 3000, 1200, 0.7, 1, 0.0008, 0.1); noise(a, t, "lowpass", 2200, 90, 0.7, 1, 0.002, 0.9); tone(a, t, "sine", 120, 32, 1, 0.002, 0.6);
+      [0.32, 0.68, 1.1, 1.6].forEach((d, i) => noise(a, t + d, "lowpass", 900 - i * 150, 120, 0.7, 0.32 / (1 + i * 0.9), 0.01, 0.5 + i * 0.15)); },   // 멀리서 돌아오는 메아리
+    whiz() { const a = A(); if (!a) return; const t = a.c.currentTime; noise(a, t + 0.05, "bandpass", 900, 200, 2, 0.35, 0.15, 0.9); tone(a, t + 0.05, "sine", 180, 60, 0.18, 0.2, 0.9); },
   };
 }
 
@@ -258,20 +272,8 @@ async function prepare() {
   const ball = new THREE.Mesh(new THREE.SphereGeometry(rb, 64, 48), ballMat); ball.castShadow = true; ball.visible = false; mass.add(ball);
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTex([[0, "rgba(255,255,255,1)"], [0.25, "rgba(255,250,235,.6)"], [1, "rgba(255,240,210,0)"]]), transparent: true, depthWrite: false, opacity: 0 }));
   glint.scale.setScalar(rb * 4); scene.add(glint);
-  const ballHome = V(0, 0, 40);
 
-  // ── 총알 · 파편 ──
-  const shot = { on: false };
-  const bulletGeo = new THREE.LatheGeometry([V(0, 1.15), V(0.12, 1.1), V(0.27, 0.95), V(0.37, 0.72), V(0.42, 0.45), V(0.43, 0), V(0.4, -0.06), V(0.36, -0.08), V(0, -0.08)].map(v => new THREE.Vector2(v.x, v.y)), 40);
-  const bullet = new THREE.Mesh(bulletGeo, new THREE.MeshPhysicalMaterial({ color: 0xc9844f, metalness: 1, roughness: 0.22, clearcoat: 0.6, envMapIntensity: 1.6 }));
-  bullet.scale.setScalar(rb * 1.05); bullet.castShadow = true; bullet.visible = false; scene.add(bullet);
-  // 총알 꼬리: 위(총알 쪽)가 밝고 꼬리로 갈수록 투명
-  const trailTex = (() => { const c = document.createElement("canvas"); c.width = 4; c.height = 128; const x = c.getContext("2d"), g = x.createLinearGradient(0, 0, 0, 128);
-    g.addColorStop(0, "rgba(255,245,225,.95)"); g.addColorStop(0.25, "rgba(255,210,150,.55)"); g.addColorStop(1, "rgba(255,190,120,0)"); x.fillStyle = g; x.fillRect(0, 0, 4, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-  const trail = new THREE.Mesh(new THREE.CylinderGeometry(rb * 0.24, rb * 0.02, 1, 16, 1, true), new THREE.MeshBasicMaterial({ map: trailTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
-  trail.visible = false; scene.add(trail);
-  const rings = []; const ringGeo = new THREE.TorusGeometry(1, 0.05, 8, 48);
-  const ringMat = () => new THREE.MeshBasicMaterial({ color: dark ? 0xcfe0ff : 0x7d93b8, transparent: true, opacity: 0.6, depthWrite: false });
+  // ── 저격으로 박살 날 때: 번쩍 · 불꽃 · 파편 ──
   const flashSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTex([[0, "rgba(255,255,245,1)"], [0.18, "rgba(255,228,160,.95)"], [0.45, "rgba(255,150,60,.5)"], [1, "rgba(255,90,20,0)"]]), transparent: true, depthWrite: false, opacity: 0 }));
   scene.add(flashSpr);
   const boomLight = new THREE.PointLight(0xffb066, 0, rb * 30, 0); scene.add(boomLight);
@@ -286,6 +288,27 @@ async function prepare() {
   // ── 영역전개 (박살 낸 뒤 "다음") ──
   const dom = buildDomain({ scene, cam, renderer, vw, vh, D, S, K, PALM_Z, FLOOR, R: hand, L: hand2, mir, hemi, key, rim, frags, floorM });
 
+  // ── 쇠공을 차고 저격하는 연출 (사람 손도 같은 손 모델) ──
+  const [H3, H4] = await Promise.all([loadHand(skin), loadHand(skin)]); mark("runner hands");
+  let uiFlash = null;
+  const sparkSys = {
+    fire(I, dir) { for (let i = 0; i < NSP; i++) { const d = V(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize().addScaledVector(dir, 0.5).normalize(); sparks[i] = { p: I.clone(), v: d.multiplyScalar(rnd(500, 2600)), life: rnd(0.25, 0.8), max: 0 }; sparks[i].max = sparks[i].life; } },
+    step(dt) {
+      for (let i = 0; i < NSP; i++) {
+        const s = sparks[i]; if (!s || s.life <= 0) { spCol[i * 8 + 3] = spCol[i * 8 + 7] = 0; continue; }
+        s.life -= dt; s.v.y -= 1600 * dt; s.v.multiplyScalar(Math.exp(-2 * dt)); s.p.addScaledVector(s.v, dt);
+        const k = Math.max(0, s.life / s.max), tail = s.p.clone().addScaledVector(s.v, -0.022);
+        spPos.set([s.p.x, s.p.y, s.p.z, tail.x, tail.y, tail.z], i * 6); spCol.set([1, 0.93, 0.7, k, 1, 0.55, 0.15, 0], i * 8);
+      }
+      spGeo.attributes.position.needsUpdate = spGeo.attributes.color.needsUpdate = true;
+      flashSpr.material.opacity = Math.max(0, flashSpr.material.opacity - dt * 4.5); flashSpr.scale.setScalar(rb * (3 + (1 - flashSpr.material.opacity) * 9));
+      boomLight.intensity = Math.max(0, boomLight.intensity - dt * 24);
+    },
+  };
+  const kickFx = buildKick({ scene, cam, renderer, vw, vh, D, FLOOR, rb, ball, glint, frags, FRG, NFRAG, key, wall, floorM, dark, hands: [H3, H4], sparkSys,
+    glowTex: radialTex([[0, "rgba(255,255,255,1)"], [0.3, "rgba(255,240,210,.6)"], [1, "rgba(255,220,180,0)"]]),
+    flash: p => { flashSpr.position.copy(p); flashSpr.material.opacity = 1; boomLight.position.copy(p); boomLight.intensity = 9; floorM.visible = false; uiFlash && uiFlash(); } });
+
   // ── 셰이더를 미리 다 만들어 둠 ──
   // 나중에 나오는 것(쇠공·파편·총알…)까지 잠깐 보이게 하고, 종이 셰이더는 가짜 종이 한 장으로
   // 백그라운드 컴파일 → 안 보이는 캔버스에 한 번 그려 그림자용 셰이더까지 준비
@@ -293,7 +316,7 @@ async function prepare() {
   const dummyCv = document.createElement("canvas"); dummyCv.width = dummyCv.height = 4;
   // 불투명·반투명(지난 날짜 칸) 종이는 셰이더가 따로라 둘 다
   const dummies = [1, 0.5].map((alpha, i) => { const d = makePaper({ tex: dummyCv, W: 40, H: 40, alpha }, { nx: 2, ny: 2, w: 1, h: 1, keys: [] }, backColor); d.g.position.set(i * 50, 0, 10); scene.add(d.g); return d; });
-  const later = [ball, frags, flakes, bullet, trail, floorM, glint, flashSpr, spLines, ink, leakSpr, rays, mir, ...dom.warm].filter(o => !o.visible);
+  const later = [ball, frags, flakes, floorM, glint, flashSpr, spLines, ink, leakSpr, rays, mir, ...dom.warm, ...kickFx.warm].filter(o => !o.visible);
   later.forEach(o => (o.visible = true)); leak.intensity = 1; boomLight.intensity = 1;
   hand.root.position.set(0, 0, HZ); mark("built");
   try { if (renderer.compileAsync) await renderer.compileAsync(scene, cam); else renderer.compile(scene, cam); } catch (e) {}
@@ -314,10 +337,11 @@ async function prepare() {
   const pickT = await bakeAll(pieces); mark("baked");
   // 화면 위 글자·버튼
   const ui = document.createElement("div"); ui.id = "gCrushUI";
-  ui.innerHTML = `<div class="cr-vig"></div><div class="cr-flash"></div><div class="cr-inv"></div><div class="cr-title" hidden>쏘세요</div>`
+  ui.innerHTML = `<div class="cr-flash"></div><div class="cr-inv"></div>`
     + `<div class="cr-dom" hidden><small>領域展開</small><b>료이키 텐카이</b><i></i></div><button class="cr-again" hidden>다음</button>`;
   document.body.append(ui);
-  const title = ui.querySelector(".cr-title"), vig = ui.querySelector(".cr-vig"), flash = ui.querySelector(".cr-flash"), again = ui.querySelector(".cr-again");
+  const flash = ui.querySelector(".cr-flash"), again = ui.querySelector(".cr-again");
+  uiFlash = () => { flash.classList.add("on"); setTimeout(() => flash.classList.remove("on"), 90); };
   document.documentElement.classList.add("crush-on");
 
   // ── 종이 ──
@@ -391,7 +415,7 @@ async function prepare() {
   }
 
   // ── 진행 ──
-  let raf = 0, last = 0, tReal = 0, tl = 0, simT = 0, shake = 0, punch = 0, freeze = 0, done = false, phase = "suck";
+  let raf = 0, last = 0, tReal = 0, tl = 0, shake = 0, punch = 0, freeze = 0, done = false, phase = "suck";
   const camBase = V(0, 0, D), look = V(0, 0, 0), camLook = V(0, 0, 0), handCam = V();
   // 손이 받는 충격: 종이가 도착할 때마다 살짝 밀렸다가 탄성 있게 돌아옴 (용수철)
   const recoil = { z: 0, vz: 0, rx: 0, vrx: 0, y: 0, vy: 0 };
@@ -434,7 +458,7 @@ async function prepare() {
       const o = eOut(seg(t, T.open, T.open + 0.55));
       if (o > 0) { gripR = 0; open = lerp(0.85, 0.08, o); ext = 0.08 * o; }
       // 공을 넘겨주고 아래로 퇴장
-      const down = eIn(seg(t, T.lift + 0.2, T.lift + 0.95)); Hr.position.y -= (vh * 0.8 + S * 2.5) * down; Hr.rotation.x -= 0.5 * down;
+      const dn = seg(t, T.lift - 0.02, T.lift + 0.6), down = 1 - (1 - dn) * (1 - dn); Hr.position.y -= (vh * 0.9 + S * 2.5) * down; Hr.rotation.x -= 0.5 * down;   // 손을 홱 빼서 공이 떨어지게
     }
     Hr.updateMatrixWorld(true);
     // 뭉치 위치: 손바닥 바로 앞 (반지름만큼 떨어져서) · 손가락은 gripR(덥석 쥘 땐 크게 시작해 실제 크기로)에 닿을 때까지 감음
@@ -483,19 +507,14 @@ async function prepare() {
     if (any) flakes.instanceMatrix.needsUpdate = true;
   }
 
-  // 쇠로 변하는 빛 → 펼치면 쇠공 → 화면 가운데로 떠오름
+  // 쇠로 변하는 빛 → 펼치면 쇠공 → 손을 홱 빼서 공이 바닥에 떨어지고, 거기서부터는 차기·저격 연출
   function ballPhase(t) {
     const g = seg(t, T.glow - 0.15, T.glow + 0.3), fade = 1 - seg(t, T.glow + 0.3, T.reveal + 0.2);
     leak.intensity = 6 * Math.sin(Math.PI * Math.min(1, g)) * fade + 1.5 * g * fade; leakSpr.material.opacity = 0.9 * Math.sin(Math.PI * Math.min(1, g * 1.1)) * fade;
-    if (t >= T.glow + 0.3 && !ball.visible && !ball.userData.out) { ball.visible = true; }
+    if (t >= T.glow + 0.3 && !ball.visible) ball.visible = true;
     if (!ball.visible) return;
     if (t < T.lift) { ball.rotation.y = t * 1.5; glint.material.opacity = 0; ball.position.set(0, 0, 0); return; }
-    if (ball.parent === mass) { scene.attach(ball); ball.userData.from = ball.position.clone(); ball.userData.out = true; snd.ting(); buzz(2); }
-    const u = eInOut(seg(t, T.lift, T.float)), bob = t > T.float ? Math.sin((t - T.float) * 2.2) * 6 : 0;
-    ball.position.copy(ball.userData.from).lerp(ballHome, u); ball.position.y += Math.sin(u * Math.PI) * 40 + bob;
-    ball.rotation.y = t * 0.8; ball.rotation.x = Math.sin(t * 0.7) * 0.3;
-    glint.position.copy(ball.position).add(V(-rb * 0.35, rb * 0.4, rb)); glint.material.opacity = (0.55 + 0.25 * Math.sin(t * 3)) * u;
-    if (t >= T.float && phase === "suck") { phase = "float"; title.hidden = false; requestAnimationFrame(() => title.classList.add("on")); }
+    if (phase === "suck") { if (ball.parent === mass) scene.attach(ball); phase = "kick"; kickFx.start({ snd, ui, onEnd: showNext }); }
   }
 
   // 때맞춰 나는 소리·진동·흔들림·멈칫
@@ -508,84 +527,10 @@ async function prepare() {
     if (t >= T.open + 0.12) once("clunk", () => { snd.clunk(); buzz(2); kick(0, 0.6, -170); });   // 쇠공 무게에 손이 출렁
   }
 
-  // ── 쏘기 ──
-  function fire() {
-    phase = "shot"; title.classList.remove("on"); snd.bang(); buzz(3);
-    // 옆(왼쪽)에서 비스듬히 날아와 총알 옆모습이 보이게
-    const dir = V(1, 0.1, -0.42).normalize(), start = ball.position.clone().addScaledVector(dir, -(vw * 0.62 + rb * 4));
-    Object.assign(shot, { on: true, dir, start, pos: start.clone(), speed: D * 2.6, hit: false, ringAcc: 0, slowAt: 0 });
-    bullet.visible = trail.visible = true; bullet.quaternion.setFromUnitVectors(V(0, 1, 0), dir); trail.quaternion.copy(bullet.quaternion);
-    vig.classList.add("on"); snd.slowmo();
-  }
-  function explode() {
-    shot.hit = true; bullet.visible = false; ball.visible = false; glint.visible = false; frags.visible = true;
-    const C = ball.position.clone(), I = C.clone().addScaledVector(shot.dir, -rb);
-    for (let i = 0; i < NFRAG; i++) {
-      const p = V(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)); if (p.lengthSq() > 1) { i--; continue; }
-      p.multiplyScalar(rb * 0.95).add(C);
-      const away = p.clone().sub(I).normalize(), near = 1 - Math.min(1, p.distanceTo(I) / (2 * rb)), back = Math.random() < 0.14;
-      const v = back ? away.clone().reflect(shot.dir).multiplyScalar(-1).add(V(rnd(-0.4, 0.4), rnd(-0.2, 0.7), 0)).normalize().multiplyScalar(rnd(220, 800))
-        : away.multiplyScalar(rnd(200, 950) * (0.6 + near)).addScaledVector(shot.dir, rnd(150, 800)).add(V(0, rnd(0, 380), 0));
-      const big = Math.random() < 0.08, s = rb * (big ? rnd(0.11, 0.2) : 0.025 + Math.pow(Math.random(), 2.4) * 0.09);
-      FRG[i] = { p, v, r: V(rnd(0, 6), rnd(0, 6), rnd(0, 6)), w: V(rnd(-25, 25), rnd(-25, 25), rnd(-25, 25)), s: V(s * rnd(0.6, 1.4), s * rnd(0.5, 1.3), s * rnd(0.4, 1)), rest: false };
-    }
-    floorM.visible = true;
-    for (let i = 0; i < NSP; i++) { const d = V(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize().addScaledVector(shot.dir, -0.6).normalize(); sparks[i] = { p: I.clone(), v: d.multiplyScalar(rnd(400, 2200)), life: rnd(0.25, 0.8), max: 0 }; sparks[i].max = sparks[i].life; }
-    flashSpr.position.copy(I); flashSpr.material.opacity = 1; boomLight.position.copy(I); boomLight.intensity = 9;
-    shake = 26; snd.impact(); buzz([3, 40, 3, 40, 3]); flash.classList.add("on"); setTimeout(() => flash.classList.remove("on"), 90);
-    shot.hitReal = tReal;
-  }
-  function shotPhase(dt) {
-    if (!shot.on) return;
-    if (!shot.hit) {
-      const total = shot.start.distanceTo(ball.position), left = shot.pos.distanceTo(ball.position);
-      shot.pos.addScaledVector(shot.dir, shot.speed * dt);
-      bullet.position.copy(shot.pos); bullet.rotateY(dt * 40);
-      const tl2 = Math.min(total - left, rb * 9); trail.scale.set(1, tl2, 1); trail.position.copy(shot.pos).addScaledVector(shot.dir, -tl2 / 2 - rb * 0.3);
-      shot.ringAcc += shot.speed * dt;
-      if (shot.ringAcc > rb * 2.2) { shot.ringAcc = 0; const r = new THREE.Mesh(ringGeo, ringMat()); r.position.copy(shot.pos).addScaledVector(shot.dir, -rb * 0.4); r.quaternion.setFromUnitVectors(V(0, 0, 1), shot.dir); r.scale.setScalar(rb * 0.5); r.userData.age = 0; scene.add(r); rings.push(r); }
-      if (left <= rb * 0.75) explode();
-    }
-    rings.forEach(r => { r.userData.age += dt; const a = r.userData.age; r.scale.setScalar(rb * (0.5 + a * 9)); r.material.opacity = Math.max(0, 0.6 - a * 2.2); });
-    for (let i = rings.length - 1; i >= 0; i--) if (rings[i].material.opacity <= 0) { scene.remove(rings[i]); rings[i].material.dispose(); rings.splice(i, 1); }
-    if (!shot.hit) return;
-    // 맞은 뒤 총알 꼬리는 빠르게 사라짐
-    if (trail.visible) { trail.material.opacity = (trail.material.opacity ?? 1) - dt * 12; if (trail.material.opacity <= 0) trail.visible = false; }
-    // 파편: 뒤 벽·화면 양옆에 튕기고 바닥에 떨어져 쌓임 (화면 밖으로 다 날아가 버리지 않게)
-    const floor = FLOOR; let tinks = 0;
-    for (let i = 0; i < NFRAG; i++) {
-      const f = FRG[i];
-      if (!f.rest) {
-        f.v.y -= 2300 * dt; f.v.multiplyScalar(Math.exp(-0.5 * dt)); f.p.addScaledVector(f.v, dt); f.r.addScaledVector(f.w, dt);
-        if (f.p.z < -24) { f.p.z = -24; f.v.z = -f.v.z * 0.35; f.v.x *= 0.8; f.v.y *= 0.8; }
-        if (f.p.z > D * 0.45) { f.p.z = D * 0.45; f.v.z = -Math.abs(f.v.z) * 0.3; }
-        const side = (vw / 2 - 4) * (D - f.p.z) / D;
-        if (Math.abs(f.p.x) > side) { f.p.x = Math.sign(f.p.x) * side; f.v.x = -f.v.x * 0.3; f.w.multiplyScalar(0.7); }
-        if (f.p.y < floor + f.s.y) { f.p.y = floor + f.s.y; if (Math.abs(f.v.y) > 120 && tinks < 3 && Math.random() < 0.03) { tinks++; snd.tink(Math.min(1, Math.abs(f.v.y) / 900)); }
-          f.v.y = -f.v.y * 0.32; f.v.x *= 0.7; f.v.z *= 0.7; f.w.multiplyScalar(0.55); if (Math.abs(f.v.y) < 60) { f.v.y = 0; if (f.v.lengthSq() < 900) f.rest = true; } }
-      }
-      frags.setMatrixAt(i, m4.compose(f.p, q4.setFromEuler(e4.set(f.r.x, f.r.y, f.r.z)), f.s));
-    }
-    frags.instanceMatrix.needsUpdate = true;
-    for (let i = 0; i < NSP; i++) {
-      const s = sparks[i]; if (!s || s.life <= 0) { spCol[i * 8 + 3] = spCol[i * 8 + 7] = 0; continue; }
-      s.life -= dt; s.v.y -= 1600 * dt; s.v.multiplyScalar(Math.exp(-2 * dt)); s.p.addScaledVector(s.v, dt);
-      const k = Math.max(0, s.life / s.max), tail = s.p.clone().addScaledVector(s.v, -0.022);
-      spPos.set([s.p.x, s.p.y, s.p.z, tail.x, tail.y, tail.z], i * 6);
-      spCol.set([1, 0.93, 0.7, k, 1, 0.55, 0.15, 0], i * 8);
-    }
-    spGeo.attributes.position.needsUpdate = spGeo.attributes.color.needsUpdate = true;
-    flashSpr.material.opacity = Math.max(0, flashSpr.material.opacity - dt * 4.5); flashSpr.scale.setScalar(rb * (3 + (1 - flashSpr.material.opacity) * 9));
-    boomLight.intensity = Math.max(0, boomLight.intensity - dt * 24);
-  }
-
-  // 느린 화면: 총알이 다가올수록 느려지고, 맞는 순간 거의 멈췄다가 다시 빨라짐
-  function timeScale() {
-    if (!shot.on) return 1;
-    if (!shot.hit) { const left = shot.pos.distanceTo(ball.position), total = shot.start.distanceTo(ball.position); return lerp(0.05, 0.2, clamp((left - rb * 2) / (total * 0.6), 0, 1)); }
-    const u = tReal - shot.hitReal; if (u < 0.5) return 0.045;
-    const s = eIn(seg(u, 0.5, 1.25)); if (s > 0.2 && !shot.shattered) { shot.shattered = true; snd.shatter(); vig.classList.remove("on"); }
-    return lerp(0.045, 1, s);
+  // 차기·저격·달리기가 끝나면 "다음" (영역전개 글자는 미리 거의 투명하게 그려 둠 · 큰 글꼴을 처음 그리는 순간 멈칫하지 않게)
+  function showNext() {
+    if (done) return; done = true; again.hidden = false; requestAnimationFrame(() => again.classList.add("on"));
+    const de = ui.querySelector(".cr-dom"); de.style.opacity = "0.004"; de.hidden = false;
   }
 
   function frame(now) {
@@ -594,58 +539,39 @@ async function prepare() {
     if (phase === "domain") { dom.tick(dtR); if (!closed) renderer.render(scene, cam); return; }
     // 멈칫(히트스톱): 세게 쥐는 순간 시간이 아주 잠깐 거의 멈춤
     const tdt = freeze > 0 ? dtR * 0.04 : dtR; freeze -= dtR; tl += tdt;
-    const t = st.debugT ?? tl, ts = timeScale(), dt = dtR * ts; simT += dt;
-    if (phase === "suck" || phase === "float") {
-      wall.material.opacity = SHADOW * clamp(t / 0.8, 0, 1);
-      const { R } = handPhase(t, tdt); papersPhase(t, R); beats(t, R);
-      punch = inkPhase(t); raysPhase(t);
-      ballPhase(t);
-    } else { ball.rotation.y += dt * 0.8; }
-    flakesPhase(dtR); shotPhase(dt);
-    // 카메라: 흔들림 · 쥐어짤 때 주먹 쪽으로 다가가 살짝 돌아봄 · 느린 화면일 때 공 쪽으로
+    const t = st.debugT ?? tl;
+    if (phase === "kick") {   // 손은 빠져나가는 중 · 나머지는 차기 연출이 카메라까지 맡음
+      if (t < T.lift + 1.2) handPhase(t, tdt); else hand.root.visible = false;
+      flakesPhase(dtR); kickFx.tick(dtR); renderer.render(scene, cam); return;
+    }
+    wall.material.opacity = SHADOW * clamp(t / 0.8, 0, 1);
+    const { R } = handPhase(t, tdt); papersPhase(t, R); beats(t, R);
+    punch = inkPhase(t); raysPhase(t);
+    ballPhase(t); flakesPhase(dtR);
+    // 카메라: 흔들림 · 쥐어짤 때 주먹 쪽으로 다가가 살짝 돌아봄
     shake *= Math.exp(-dtR * 8);
-    const zoom = shot.on ? eInOut(clamp(1 - Math.abs(ts - 0.045) / 0.6, 0, 1)) : 0;
-    const grip = phase === "suck" ? eInOut(seg(t, T.closed, T.turn + 0.4)) * (1 - eInOut(seg(t, T.reveal + 0.2, T.lift + 0.3))) : 0;
-    look.copy(ball.visible || shot.on ? ball.position : V()).multiplyScalar(zoom * 0.6);
-    if (grip > 0) look.lerp(handCam.copy(mass.getWorldPosition(V())).multiplyScalar(0.5), grip);
+    const grip = eInOut(seg(t, T.closed, T.turn + 0.4)) * (1 - eInOut(seg(t, T.reveal + 0.2, T.lift + 0.3)));
+    look.set(0, 0, 0); if (grip > 0) look.lerp(handCam.copy(mass.getWorldPosition(V())).multiplyScalar(0.5), grip);
     camLook.lerp(look, Math.min(1, dtR * 6));
-    cam.position.copy(camBase).add(V(rnd(-1, 1) * shake, rnd(-1, 1) * shake, 0)).add(V(camLook.x * 0.3 + D * 0.12 * grip, camLook.y * 0.3, -D * 0.12 * zoom - D * 0.035 * punch - D * 0.1 * grip));
+    cam.position.copy(camBase).add(V(rnd(-1, 1) * shake, rnd(-1, 1) * shake, 0)).add(V(camLook.x * 0.3 + D * 0.12 * grip, camLook.y * 0.3, -D * 0.035 * punch - D * 0.1 * grip));
     cam.lookAt(camLook);
     renderer.render(scene, cam);
-    if (shot.hit && !done && tReal - shot.hitReal > 3.4) {
-      done = true; again.hidden = false; requestAnimationFrame(() => again.classList.add("on"));
-      // 영역전개 글자를 미리 거의 투명하게 그려 둠 (큰 글꼴을 처음 그리는 순간 멈칫하지 않게)
-      const de = ui.querySelector(".cr-dom"); de.style.opacity = "0.004"; de.hidden = false;
-    }
   }
 
-  // 공 누르기 (공 근처를 누르면 맞힌 것으로)
-  const onDown = e => {
-    if (phase !== "float") return;
-    const sp = ball.position.clone().project(cam), x = (sp.x + 1) / 2 * vw, y = (1 - sp.y) / 2 * vh;
-    const rad = rb * D / (D - ball.position.z);
-    if (Math.hypot(e.clientX - x, e.clientY - y) < rad * 1.5 + 14) { e.preventDefault(); fire(); }
-  };
-  cv.addEventListener("pointerdown", onDown);
-  // 다음 → 영역전개. 어둠이 걷히기 전에 달력을 밑에 다시 깔아 두고, 다 걷히면 정리
+  // 다음 → 영역전개. 파편 무더기를 원래 자리로 옮겨 놓고 시작 · 어둠이 걷히기 전에 달력을 밑에 다시 깔아 두고, 다 걷히면 정리
   const startDomain = () => {
     if (phase === "domain") return;
     again.classList.remove("on"); again.hidden = true; phase = "domain";
+    kickFx.toDomain(); hand.root.visible = true;
     dom.start({ snd, ui, frg: FRG, onRestore: () => { document.documentElement.classList.remove("crush-on"); onDone && onDone(); }, onEnd: finish });
   };
   again.onclick = startDomain;
-  if (import.meta.env.DEV) st.devDomain = () => {   // 시험용: 바로 쏴서 파편을 바닥에 깔고 영역전개 시작
-    papers.forEach(pp => (pp.g.visible = false)); hand.root.position.y = startY - vh;
-    if (ball.parent !== scene) scene.attach(ball);
-    ball.visible = true; ball.position.copy(ballHome); shot.dir = V(1, 0.1, -0.42).normalize(); shot.on = true; explode();
-    for (let i = 0; i < 300; i++) shotPhase(1 / 60);
-    flash.classList.remove("on"); startDomain();
-  };
+  if (import.meta.env.DEV) { st.kick = kickFx; st.devKick = () => { tl = Math.max(tl, T.lift - 0.05); }; }   // 시험용: 쇠공이 떨어지기 직전으로
 
   let closed = false;
   function finish() {
     if (closed) return; closed = true;
-    cancelAnimationFrame(raf); cv.removeEventListener("pointerdown", onDown);
+    cancelAnimationFrame(raf);
     scene.traverse(o => { if (o.geometry) o.geometry.dispose(); const m = o.material; if (m) (Array.isArray(m) ? m : [m]).forEach(x => { for (const k in x) if (x[k] && x[k].isTexture) x[k].dispose(); x.dispose(); }); });
     texCache.forEach(t => t.dispose()); texCache.clear(); envTex.dispose(); pmrem.dispose(); renderer.dispose();
     cv.remove(); ui.remove(); document.documentElement.classList.remove("crush-on");

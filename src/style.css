@@ -37,11 +37,35 @@ button{font:inherit;color:inherit;cursor:pointer}
 .gbar button[data-tool="hammer"][aria-pressed="true"]{background:#5b6470;color:#fff}
 .gbar button[data-tool="fire"][aria-pressed="true"]{background:#e2511c;color:#fff}
 .gbar button[data-tool="water"][aria-pressed="true"]{background:#2a7fd4;color:#fff}
+.gbar button[data-tool="gun"][aria-pressed="true"]{background:#47513f;color:#fff}
 #gZero[data-mode="grav"] .ic-zero,#gZero[data-mode="zero"] .ic-grav{display:none}
 .gsep{width:1px;align-self:stretch;margin:5px 3px;background:var(--line);flex:none}
-@media (max-width:760px){.gbar button{padding:7px 8px}.gbar button .lbl{display:none}.gsep{margin:5px 1px}}
+@media (max-width:760px){.gbar button,.gfin button{padding:7px 8px}.gbar button .lbl,.gfin button .lbl{display:none}.gsep{margin:5px 1px}}
+@media (max-width:400px){.gbar button{padding:7px 7px}}
 
 .grow2{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+/* 필살기(짓누르기 · 거대한 발) */
+.gfin{display:flex;gap:2px;padding:2px;background:var(--paper);border:1px solid var(--line);border-radius:12px;flex:none}
+.gfin button{font-size:.78rem;font-weight:700;display:flex;align-items:center;gap:5px;padding:5px 10px;border:none;border-radius:9px;background:transparent;white-space:nowrap;touch-action:manipulation}
+.gfin button svg{width:16px;height:16px;flex:none}
+@media (hover:hover){.gfin button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}}
+.gfin #gCrushBtn{color:#8a4b14}
+.gfin #gStompBtn{color:#6b3f1d}
+@media (prefers-color-scheme:dark){.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}}
+/* 재질 */
+.gmat{position:relative;flex:none}
+.gpill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.78rem;font-weight:700;touch-action:manipulation}
+.gpill .sw{width:15px;height:15px}
+.sw{display:block;flex:none;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.gmenu{position:absolute;top:calc(100% + 6px);right:0;z-index:50;min-width:150px;width:max-content;padding:4px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.gmenu p{margin:4px 10px 4px;font-size:.7rem;font-weight:700;color:var(--mute)}
+.gmenu button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;font-size:.86rem;font-weight:600;text-align:left}
+.gmenu button .sw{width:22px;height:22px;border-radius:6px;flex:none}
+.gmenu button span{display:flex;flex-direction:column;line-height:1.25}
+.gmenu button small{font-size:.68rem;font-weight:500;color:var(--mute);white-space:nowrap}
+.gmenu button[aria-checked="true"]{background:color-mix(in srgb,var(--ink) 8%,transparent)}
+.gmenu button[aria-checked="true"]::after{content:"";margin-left:auto;width:6px;height:11px;border:solid var(--ink);border-width:0 2px 2px 0;transform:translateY(-2px) rotate(45deg)}
+@media (hover:hover){.gmenu button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}}
 .gpow{display:flex;align-items:center;gap:10px;padding:2px 12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;font-size:.78rem}
 .gpl{font-weight:600;color:var(--ink);white-space:nowrap}
 .gtrack{position:relative;width:min(190px,40vw);height:24px;cursor:pointer;touch-action:none;outline:none}
@@ -50,6 +74,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .gthumb{position:absolute;top:3px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:var(--paper);border:2px solid #d9561c;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .gtrack:focus-visible .gthumb{outline:2px solid var(--today);outline-offset:2px}
 .gpv{min-width:3.4em;text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:#d9561c}
+/* 좁은 화면: 파괴력 · 필살기 · 재질이 한 줄에 들어가도록 */
+@media (max-width:420px){.gpl{display:none}.gpow{padding:2px 10px;gap:8px}.gtrack{width:min(190px,27vw)}.gpv{min-width:3em}.gpill{padding:5px 8px}.gfin button{padding:5px 8px}}
 /* 물 내리기: 물이 차는 화면 아래쪽에 떠 있음 (위쪽 막대 높이를 바꾸지 않도록) */
 .gdrain{position:fixed;left:50%;bottom:calc(14px + var(--ib));transform:translateX(-50%);z-index:41;
   font-size:.86rem;font-weight:600;display:flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;border:1px solid #2a7fd4;
@@ -141,21 +167,14 @@ html.grav-on[data-gtool="grab"]{cursor:grab}
 html.grav-on[data-gtool="laser"]{cursor:crosshair}
 html.grav-on[data-gtool="bomb"]{cursor:cell}
 html.grav-on[data-gtool="hammer"]{cursor:pointer}
-html.grav-on[data-gtool="fire"],html.grav-on[data-gtool="water"]{cursor:crosshair}
+html.grav-on[data-gtool="fire"],html.grav-on[data-gtool="water"],html.grav-on[data-gtool="gun"]{cursor:crosshair}
 /* ── 손으로 짓누르기 (3D) ── */
-.gbar #gCrushBtn{color:#8a4b14}
-@media (prefers-color-scheme:dark){.gbar #gCrushBtn{color:#f0b47a}}
 html.crush-on #stage{visibility:hidden}
 html.crush-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
 html.crush-on #sheet{display:none}
 #gCrush{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:45;touch-action:none}
 #gCrushUI{position:fixed;inset:0;z-index:46;pointer-events:none}
-#gCrushUI .cr-title{position:absolute;left:0;right:0;top:calc(28px + var(--it));text-align:center;font-size:clamp(34px,10vw,64px);font-weight:900;letter-spacing:.08em;
-  color:var(--ink);opacity:0;transform:translateY(-14px) scale(.96);transition:opacity .45s,transform .45s cubic-bezier(.2,1.6,.4,1)}
-#gCrushUI .cr-title.on{opacity:1;transform:none;animation:crPulse 1.6s ease-in-out .5s infinite}
-@keyframes crPulse{50%{transform:scale(1.05)}}
-#gCrushUI .cr-vig{position:absolute;inset:0;background:radial-gradient(140% 85% at 50% 50%,transparent 52%,rgba(8,10,16,.42) 100%);opacity:0;transition:opacity .4s}
-#gCrushUI .cr-vig.on{opacity:1}
+#gCrushUI .cr-scope{position:absolute;inset:0;width:100%;height:100%}
 #gCrushUI .cr-flash{position:absolute;inset:0;background:#fff8ec;opacity:0;transition:opacity .25s}
 #gCrushUI .cr-flash.on{opacity:.85;transition:none}
 #gCrushUI .cr-again{position:absolute;left:50%;bottom:calc(28px + var(--ib));transform:translate(-50%,10px);pointer-events:auto;border:0;border-radius:999px;padding:13px 28px;
