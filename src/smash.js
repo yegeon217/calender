@@ -22,7 +22,8 @@ const TOOL_HINT={
   hammer:"톡 누른 곳을 망치로 쾅 · 파괴력이 클수록 잘게 쪼개져요",
   fire:"문지른 곳에 불이 붙어요 · 옆으로 번지고, 물을 부으면 꺼져요",
   water:"문지른 곳에 물이 쏟아져요 · 계속 부으면 화면이 차올라요",
-  gun:"누르고 있으면 연사 · 끌면서 쓸어 보세요"
+  gun:"누르고 있으면 연사 · 끌면서 쓸어 보세요",
+  bazooka:"톡 누른 곳으로 로켓 발사 · 다시 끼우는 데 1초쯤 걸려요"
 };
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -31,10 +32,16 @@ const bopt=()=>Object.assign({},BOPT,PHYS[mat()]);
 // 충돌 분류: 떠 있는 칸(PIN)도 떨어진 조각(FREE)과 부딪힘 → 세게 부딪히면 떨어져 나옴 (startSmash의 collisionStart)
 const CAT_WALL=1,CAT_PIN=2,CAT_FREE=4,KNOCK=5;   // KNOCK: 떠 있는 칸을 떼어낼 만큼의 속도 (px/스텝)
 function setCat(b,cat){for(const pt of b.parts){pt.collisionFilter.category=cat;pt.collisionFilter.mask=CAT_WALL|CAT_PIN|CAT_FREE;}}
-function release(p){if(!p||p.dead||!p.pin)return;p.pin=false;
+// 유리로 벽 칸에 붙어 고정된 조각(anc)도 같은 식으로 풀림
+function release(p){if(!p||p.dead)return;
+  if(p.anc){p.anc=false;Matter.Body.setStatic(p.body,false);setCat(p.body,CAT_FREE);if(G){G.calm=0;G.grpDirty=true;relPartners(p);}return;}
+  if(!p.pin)return;p.pin=false;
   Matter.Body.setStatic(p.body,false);setCat(p.body,CAT_FREE);if(G){G.calm=0;unwall(p);
     // 녹은 유리로 붙은 조각은 같이 떨어짐
-    if(p.fg)for(const L of G.fz)if(L.on&&!L.dead&&(L.a===p||L.b===p))release(L.a===p?L.b:L.a);}}
+    if(p.fg){G.grpDirty=true;relPartners(p);}}}
+function relPartners(p){for(const L of G.fz)if(L.on&&!L.dead&&(L.a===p||L.b===p))release(L.a===p?L.b:L.a);}
+// 정지 몸체(벽에 붙은 칸 · 유리로 고정된 조각)에는 속도를 주지 않음
+for(const k of ["setVelocity","setAngularVelocity"]){const f=Matter.Body[k];Matter.Body[k]=(b,v)=>{if(!b.isStatic)f(b,v);};}
 function unstick(b){if(b.isStatic){Matter.Body.setStatic(b,false);setCat(b,CAT_FREE);}}
 
 // ── 소리 (WebAudio로 직접 합성) ──
@@ -99,6 +106,7 @@ function makeSprites(){SPR={
   fBlue:sprite([[0,"rgba(235,244,255,1)"],[.3,"rgba(120,170,255,.8)"],[.7,"rgba(40,80,255,.25)"],[1,"rgba(20,40,200,0)"]]),
   dust:sprite([[0,"rgba(196,186,170,.6)"],[.6,"rgba(188,178,162,.24)"],[1,"rgba(188,178,162,0)"]]),
   steam:sprite([[0,"rgba(242,246,250,.6)"],[.6,"rgba(236,242,248,.22)"],[1,"rgba(236,242,248,0)"]]),
+  rsm:sprite([[0,"rgba(222,220,215,.66)"],[.5,"rgba(208,205,200,.34)"],[1,"rgba(200,198,194,0)"]]),
   case:caseSprite(),
   glint:sprite([[0,"rgba(255,255,255,1)"],[.18,"rgba(235,248,255,.9)"],[.45,"rgba(170,215,255,.28)"],[1,"rgba(150,200,255,0)"]]),
   caus:causticTile()};
@@ -255,7 +263,12 @@ function paint(p){
   const {ow,oh,W,H,cs,cols,rows,d,h,nz,pn}=p,data=p.img.data;
   const doMask=p.needMask&&G.time-p.maskT>(p.burning?.2:.06);
   let md=null;if(doMask){if(!p.mimg)p.mimg=new ImageData(ow,oh);md=p.mimg.data;}
-  const soft=p.soft?.5:1,wt=p.wet?p.wt:null,cl=p.hasCl?p.cl:null;
+  const soft=p.soft?.5:1,wt=p.wet?p.wt:null,cl=p.hasCl?p.cl:null,dk=isDark();
+  let D=d;if(p.ml&&cl){D=p.dsm&&p.dsm.length===d.length?p.dsm:(p.dsm=new Float32Array(d.length));
+    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){const i=y*cols+x;let near=false,s=0,n=0;
+      for(let oy=-1;oy<=1;oy++){const yy=y+oy;if(yy<0||yy>=rows)continue;for(let ox=-1;ox<=1;ox++){const xx=x+ox;if(xx<0||xx>=cols)continue;const j=yy*cols+xx;if(cl[j]===2)near=true;s+=Math.min(d[j],1.3);n++;}}
+      D[i]=near?s/n:d[i];}}
+  const RE=dk?[8,22,26]:[40,88,96];
   // 열(x)마다 같은 격자 보간 값은 조각마다 한 번만 계산해 둠
   if(!p.cx0){p.cx0=new Int32Array(ow);p.cx1=new Int32Array(ow);p.cfx=new Float32Array(ow);
     for(let x=0;x<ow;x++){const gx=((x+.5)*W/ow)/cs-.5;let x0=Math.floor(gx),fx=gx-x0;if(x0<0){x0=0;fx=0}if(x0>=cols-1){x0=cols-1;fx=0}
@@ -267,24 +280,34 @@ function paint(p){
       const x0=CX0[x],x1=CX1[x],fx=CFX[x];
       const a=y0*cols+x0,b=y0*cols+x1,c=y1*cols+x0,e=y1*cols+x1;
       // 손상·열·물기가 하나도 없는 곳은 빠르게 건너뛰기
-      if(d[a]===0&&d[b]===0&&d[c]===0&&d[e]===0&&h[a]===0&&h[b]===0&&h[c]===0&&h[e]===0&&(!wt||(wt[a]===0&&wt[b]===0&&wt[c]===0&&wt[e]===0))){const z=(y*ow+x)*4;data[z+3]=0;if(md)md[z+3]=255;continue;}
+      if(D[a]===0&&D[b]===0&&D[c]===0&&D[e]===0&&h[a]===0&&h[b]===0&&h[c]===0&&h[e]===0&&(!wt||(wt[a]===0&&wt[b]===0&&wt[c]===0&&wt[e]===0))){const z=(y*ow+x)*4;data[z+3]=0;if(md)md[z+3]=255;continue;}
       const w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
-      const d0=Math.min(d[a],1.3),d1=Math.min(d[b],1.3),d2=Math.min(d[c],1.3),d3=Math.min(d[e],1.3);
+      const d0=Math.min(D[a],1.3),d1=Math.min(D[b],1.3),d2=Math.min(D[c],1.3),d3=Math.min(D[e],1.3);
       const bd=d0*w00+d1*w10+d2*w01+d3*w11;
       const k=y*ow+x,k4=k*4;
-      let dv=bd,cv=bd,jit=0;
-      if(bd>0){const bn=nz[a]*w00+nz[b]*w10+nz[c]*w01+nz[e]*w11;jit=(pn[k]-.5)*.07+(bn-.5)*.26;dv=bd+jit*Math.min(1,bd*4);}
+      let dv=bd,cv=bd,jit=0,ce=0,cm=0;
+      if(cl){ce=(cl[a]?w00:0)+(cl[b]?w10:0)+(cl[c]?w01:0)+(cl[e]?w11:0);if(ce>0)cm=(cl[a]===2?w00:0)+(cl[b]===2?w10:0)+(cl[c]===2?w01:0)+(cl[e]===2?w11:0);}
+      if(bd>0){const bn=nz[a]*w00+nz[b]*w10+nz[c]*w01+nz[e]*w11;jit=((pn[k]-.5)*.07+(bn-.5)*.26)*(1-cm);dv=bd+jit*Math.min(1,bd*4);}
       // 망치로 깨진 칸은 그을음 없이 깨끗한 단면 (가장자리만 살짝 어둡게)
-      let ce=0;if(cl){ce=cl[a]*w00+cl[b]*w10+cl[c]*w01+cl[e]*w11;if(ce>0){cv=(cl[a]?0:d0)*w00+(cl[b]?0:d1)*w10+(cl[c]?0:d2)*w01+(cl[e]?0:d3)*w11;}}
-      if(ce>0)cv=cv>0?cv+jit*Math.min(1,cv*4):0;else cv=dv;
+      if(ce>0)cv=(cl[a]?0:Math.min(d[a],1.3))*w00+(cl[b]?0:Math.min(d[b],1.3))*w10+(cl[c]?0:Math.min(d[c],1.3))*w01+(cl[e]?0:Math.min(d[e],1.3))*w11;
+      else if(D!==d)cv=Math.min(d[a],1.3)*w00+Math.min(d[b],1.3)*w10+Math.min(d[c],1.3)*w01+Math.min(d[e],1.3)*w11;
+      if(ce>0||D!==d)cv=cv>0?cv+jit*Math.min(1,cv*4):0;else cv=dv;
       const hv=h[a]*w00+h[b]*w10+h[c]*w01+h[e]*w11;
       let al=0,r=0,g=0,bl=0;
       if(cv>.03){const t=clamp((cv-.03)/.7,0,1);al=t*t*(3-2*t)*.97*soft;const u=clamp((cv-.12)/.6,0,1);r=128-110*u;g=82-70*u;bl=38-29*u;}
-      if(ce>0&&dv<1){const ea=.34*clamp(dv*2.4,0,1)*ce*soft,A=ea+al*(1-ea);if(A>0){r=(62*ea+r*al*(1-ea))/A;g=(57*ea+g*al*(1-ea))/A;bl=(52*ea+bl*al*(1-ea))/A;al=A;}}
+      // 녹아 오그라든 테: 구멍 쪽으로 갈수록 짙고, 빛(왼쪽 위)을 받는 쪽 비탈에 하이라이트
+      if(cm>0&&dv>.3&&dv<1){const t=clamp((dv-.3)/.5,0,1),gx=(d1-d0)*(1-fy)+(d3-d2)*fy,gy=(d2-d0)*(1-fx)+(d3-d1)*fx,gl=Math.hypot(gx,gy)||1,
+          lit=Math.max(0,-(gx+gy)/(gl*1.414)),ea=(.3+.16*t)*t*cm,A=ea+al*(1-ea);
+        r=(RE[0]*ea+r*al*(1-ea))/A;g=(RE[1]*ea+g*al*(1-ea))/A;bl=(RE[2]*ea+bl*al*(1-ea))/A;al=A;
+        const hb=lit*Math.sin(t*Math.PI)*(dk?.3:.75)*cm;if(hb>.02){const A2=hb+al*(1-hb);r=(255*hb+r*al*(1-hb))/A2;g=(255*hb+g*al*(1-hb))/A2;bl=(255*hb+bl*al*(1-hb))/A2;al=A2;}}
+      if(ce>cm&&dv<1){const ea=.34*clamp(dv*2.4,0,1)*(ce-cm)*soft,A=ea+al*(1-ea);if(A>0){r=(62*ea+r*al*(1-ea))/A;g=(57*ea+g*al*(1-ea))/A;bl=(52*ea+bl*al*(1-ea))/A;al=A;}}
       if(hv>.01){const em=clamp(hv*1.5,0,1),er=255,eg=70+185*Math.pow(hv,1.3),eb=20+200*hv*hv*hv,A=em+al*(1-em);
         if(A>0){r=(er*em+r*al*(1-em))/A;g=(eg*em+g*al*(1-em))/A;bl=(eb*em+bl*al*(1-em))/A;}al=A;}
+      // 젖은 자리: 가장자리가 들쭉날쭉 번지고, 물이 멈춘 테두리(물 자국)가 조금 더 진함 · 마르면서 안쪽으로 줄어듦
       if(wt){const wv=wt[a]*w00+wt[b]*w10+wt[c]*w01+wt[e]*w11;
-        if(wv>.01){const wa=.26*wv*soft,A=wa+al*(1-wa);r=(14*wa+r*al*(1-wa))/A;g=(34*wa+g*al*(1-wa))/A;bl=(62*wa+bl*al*(1-wa))/A;al=A;}}
+        if(wv>.01){const wq=wv+((nz[a]*w00+nz[b]*w10+nz[c]*w01+nz[e]*w11-.5)*.55+(pn[k]-.5)*.1)*Math.min(1,wv*2.5),
+            body=clamp((wq-.3)/.28,0,1),rim=clamp((wq-.2)/.14,0,1)*(1-clamp((wq-.36)/.22,0,1)),wa=(.12*body*body*(3-2*body)+.12*rim)*soft;
+          if(wa>.003){const A=wa+al*(1-wa);r=(30*wa+r*al*(1-wa))/A;g=(44*wa+g*al*(1-wa))/A;bl=(64*wa+bl*al*(1-wa))/A;al=A;}}}
       data[k4]=r;data[k4+1]=g;data[k4+2]=bl;data[k4+3]=al*255;
       if(md){md[k4+3]=clamp((1-dv)*7,0,1)*255;}
     }}
@@ -296,6 +319,7 @@ function paint(p){
 
 // 끊어진 부분을 찾아 조각을 나누고, 남은 모양대로 몸체를 다시 만들기
 function restructure(p){
+  if(p.body&&p.body.plugin.grp)unshare(p.body);
   p.shapeDirty=false;p.shapeT=G.time;
   const {cols,rows,cs}=p,d=p.d,N=cols*rows,lab=new Int32Array(N).fill(-1),comps=[];
   for(let i=0;i<N;i++){if(d[i]>=1||lab[i]>=0)continue;const id=comps.length,st=[i],cells=[];lab[i]=id;
@@ -326,8 +350,8 @@ function restructure(p){
     let q=p;
     // 쪼개진 조각은 같은 칸 그림(base)을 같이 쓰고 그을음·구멍만 따로 가짐
     if(k>0){q={base:p.base,W:p.W,H:p.H,orig:p.orig,alpha:p.alpha,rad:p.rad,soft:p.soft,colors:p.colors,gr:p.gr,mk:p.mk,mkx:p.mkx,ho:p.ho,hox:p.hox,dead:false,cs,cols,rows,nz:p.nz,n0:p.n0};
-      q.h=bh.slice();q.fu=p.fu.slice();q.bn=p.bn.slice();q.wt=p.wt.slice();q.cl=p.cl.slice();q.hasCl=p.hasCl;q.burning=p.burning;q.wet=p.wet;
-      if(p.tg){q.tg=p.tg.slice();q.mf=p.mf.slice();q.gh=p.gh;q.gm=p.gm;}
+      q.h=bh.slice();q.fu=p.fu.slice();q.bn=p.bn.slice();q.wt=p.wt.slice();q.cl=p.cl.slice();q.hasCl=p.hasCl;q.ml=p.ml;q.burning=p.burning;q.wet=p.wet;
+      if(p.tg){q.tg=p.tg.slice();q.mf=p.mf.slice();q.tx=p.tx&&p.tx.slice();q.gh=p.gh;q.gm=p.gm;}
       setupTex(q);G.pieces.push(q);}
     q.pin=k===0&&stay;
     q.d=d0.slice();
@@ -335,14 +359,16 @@ function restructure(p){
     q.needMask=true;q.dirty=true;q.hot=true;q.clip=true;if(snap)q.tex=snap;made.push(q);});
   if(G.ptr.pend===ob)G.ptr.pend=null;
   Matter.Composite.remove(G.engine.world,ob);
-  made.forEach(q=>{q.f=f;if(!buildBody(q,f,ob))killPiece(q,true);});
+  made.forEach(q=>{q.f=f;q.anc=false;if(!buildBody(q,f,ob))killPiece(q,true);});
   if(G.fz.length||G.md.length)reglass(p,made);
+  if(p.fg)G.grpDirty=true;
   const w=held||pend;
   if(w){const live=made.filter(q=>!q.dead),t=live.find(q=>{const L=toLocal(q,w.x,w.y),cx=Math.floor(L.x/q.cs),cy=Math.floor(L.y/q.cs);
       return cx>=0&&cy>=0&&cx<q.cols&&cy<q.rows&&q.d[cy*q.cols+cx]<1;})||live[0];
     if(t){if(held)grab(t.body,w.x,w.y);else G.ptr.pend=t.body;}}}
 function killPiece(p,silent){if(p.dead)return;p.dead=true;if(p.pin)unwall(p);
-  if(p.fg||G.md.length)unglass(p);
+  if(p.body&&p.body.plugin.grp)unshare(p.body);
+  if(p.fg||G.md.length||G.ice.length)unglass(p);
   if(G.drag&&G.drag.b===p.body)dropDrag();
   if(G.ptr.pend===p.body)G.ptr.pend=null;
   if(p.body)Matter.Composite.remove(G.engine.world,p.body);
@@ -383,8 +409,7 @@ function laserStep(dt){
     for(let i=0;i<3;i++){const a=rnd(0,6.28),s=rnd(120,480);spark(P.x,P.y,Math.cos(a)*s,Math.sin(a)*s-120,rnd(.15,.45));}
     if(Math.random()<.45)smoke(P.x+rnd(-3,3),P.y,rnd(-12,12),rnd(-60,-25),rnd(4,8),.32);
     sSizzle(.16);
-  }else{sSizzle(0);
-    G.dctx.globalAlpha=Math.min(1,dt*3);G.dctx.drawImage(SPR.soot,P.x-6,P.y-6,12,12);G.dctx.globalAlpha=1;}}
+  }else sSizzle(0);}
 
 // ── 폭탄 ──
 function spawnBomb(x,y){if(G.bombs.length>=14)return;
@@ -394,8 +419,8 @@ function spawnBomb(x,y){if(G.bombs.length>=14)return;
   else{setCat(b,CAT_FREE);Matter.Body.setAngularVelocity(b,rnd(-.08,.08));}
   Matter.Composite.add(G.engine.world,b);
   G.bombs.push({b,t:G.time+1.15,fuse:1.15});}
-function explode(x,y){
-  const {Body}=Matter;const k=PK(),R0=24*k,R1=80*k,f0=rnd(0,6.3),S=str();let any=false,brk=0;
+function explode(x,y,mul=1){
+  const {Body}=Matter;const k=PK()*mul,R0=24*k,R1=80*k,f0=rnd(0,6.3),S=str();let any=false,brk=0;
   for(const p of G.pieces.slice()){if(p.dead)continue;const bb=p.body.bounds;
     if(x<bb.min.x-R1||x>bb.max.x+R1||y<bb.min.y-R1||y>bb.max.y+R1)continue;
     const L=toLocal(p,x,y),lc=p.cs;
@@ -409,7 +434,7 @@ function explode(x,y){
   if(any&&mat()!=="paper")sMatHit(clamp(.45+.3*k,.4,1.1),clamp(.5+.3*k,.5,1));
   // 폭풍: 맞지 않았어도 가까이 떠 있던 칸은 떨어져 나가 함께 날아감
   for(const p of G.pieces){if(p.dead||!p.pin)continue;const b=p.body;if(1/(1+(Math.hypot(b.position.x-x,b.position.y-y)/(85*k))**2)>Math.min(.97,.3*Math.max(1,S)))release(p);}
-  const bodies=G.pieces.filter(p=>!p.dead).map(p=>p.body).concat(G.bombs.map(B=>B.b)).filter(b=>!b.isStatic);
+  const bodies=[...new Set(G.pieces.filter(p=>!p.dead).map(p=>p.body))].concat(G.bombs.map(B=>B.b)).filter(b=>!b.isStatic);
   for(const b of bodies){const dx=b.position.x-x,dy=b.position.y-y,dist=Math.hypot(dx,dy)||1;if(dist>380*k)continue;
     const fall=1/(1+(dist/(85*k))**2);let ux=dx/dist,uy=dy/dist-.45;const un=Math.hypot(ux,uy);ux/=un;uy/=un;
     const dv=24*Math.pow(POW,.75)*fall/Math.sqrt(Math.max(1,b.mass/3));
@@ -427,9 +452,6 @@ function explode(x,y){
   for(let i=0,n=Math.round(70*k);i<n;i++){const a=rnd(0,6.28),s=rnd(250,950);spark(x,y,Math.cos(a)*s,Math.sin(a)*s-100,rnd(.3,.9));}
   addP({t:"ring",x,y,life:.36,max:.36,R:150*k});
   G.flash=Math.min(.6,G.flash+.36*Math.min(k,1.6));G.shake=Math.min(32,G.shake+13*k);
-  const dc=G.dctx;dc.globalAlpha=.42;dc.drawImage(SPR.soot,x-70*k,y-70*k,140*k,140*k);dc.globalAlpha=.25;
-  for(let i=0;i<14;i++){const a=rnd(0,6.28),r=rnd(20,80),s=rnd(8,22);dc.drawImage(SPR.soot,x+Math.cos(a)*r-s/2,y+Math.sin(a)*r-s/2,s,s);}
-  dc.globalAlpha=1;
   sBoom(clamp(.55+.45*k,.6,1.4));}
 
 // ── 그리기 ──
@@ -449,6 +471,7 @@ function drawFx(dt){
   drawStompShadow(c);
   for(const q of G.ps){if(q.t!=="smoke")continue;const k=q.life/q.max;
     c.globalAlpha=q.a*Math.min(1,k*1.6)*Math.min(1,(1-k)*5+.25);c.drawImage(SPR.smoke,q.x-q.r,q.y-q.r,q.r*2,q.r*2);}
+  drawRSmoke(c);
   // 파편: 색·투명도가 같은 것끼리 한 경로로 묶어 한 번에 칠함 (파편이 수백 개여도 칠하기는 십여 번)
   const SH=G.shB;SH.clear();
   for(const q of G.ps){if(q.t!=="shard")continue;const k=q.col+"|"+(q.life<.5?Math.max(1,Math.ceil(q.life*8)):4);
@@ -477,7 +500,10 @@ function drawFx(dt){
     if(q.t!=="steam"&&q.t!=="dust")continue;const k=q.life/q.max;
     c.globalAlpha=q.a*Math.min(1,k*1.5)*Math.min(1,(1-k)*6+.2);c.drawImage(q.t==="steam"?SPR.steam:SPR.dust,q.x-q.r,q.y-q.r,q.r*2,q.r*2);}
   c.globalAlpha=1;
+  drawRockets(c);
   drawGun(c);
+  drawBazooka(c);
+  drawBoltsInk(c);
   c.globalCompositeOperation="lighter";
   // 불: 주변을 비추는 빛 → 불꽃 → 불덩이
   const gf=gfac(),st=gf>.3?1.7:1.05,sw=gf>.3?.78:1;
@@ -494,7 +520,7 @@ function drawFx(dt){
     else if(q.t==="spark")SB[Math.min(3,(k*4)|0)].push(q);
     else if(q.t==="ember"){const s=q.s*k+2;c.globalAlpha=k;c.drawImage(SPR.glow,q.x-s,q.y-s,s*2,s*2);}
     else if(q.t==="ring"){const u=1-k;c.globalAlpha=.65*k;c.strokeStyle="rgb(255,240,220)";c.lineWidth=1+3*k;c.beginPath();c.arc(q.x,q.y,q.R*Math.sqrt(u),0,Math.PI*2);c.stroke();}
-    else if(q.t==="glint"){const s=q.s*(.4+.6*k);c.globalAlpha=k;c.drawImage(q.w?SPR.glow:SPR.glint,q.x-s,q.y-s,s*2,s*2);}
+    else if(q.t==="glint"){const s=q.s*(.4+.6*k);c.globalAlpha=k;c.drawImage(q.red?SPR.red:q.w?SPR.glow:SPR.glint,q.x-s,q.y-s,s*2,s*2);}
     // 유리 파편이 돌면서 빛을 받아 반짝임
     else if(glass&&q.t==="shard"&&Math.sin(q.rot*2+q.gl)>.96){const s=q.w*1.6+3;c.globalAlpha=.8*Math.min(1,k*3);c.drawImage(SPR.glint,q.x-s,q.y-s,s*2,s*2);}}
   // 불티: 밝기 4단계로 묶어서 한 번에 그림
@@ -513,6 +539,8 @@ function drawFx(dt){
       const s=9;c.drawImage(SPR.red,E.x-s,E.y-s,s*2,s*2);
     }else if(P.x>0){c.globalAlpha=.7;c.drawImage(SPR.red,P.x-5,P.y-5,10,10);}}
   drawGunFx(c);
+  drawBzFx(c);
+  drawBoltsGlow(c);
   c.globalCompositeOperation="source-over";c.globalAlpha=1;
   for(const H of G.hm)drawHammer(c,H);
   drawStompFoot(c);
@@ -536,7 +564,7 @@ function nLoop(c,type,freq,Q){const s=noiseSrc(c),f=c.createBiquadFilter(),g=c.c
 const mkFire=c=>nLoop(c,"lowpass",620,.5);
 const mkPour=c=>nLoop(c,"bandpass",1250,.55);
 const mkDrain=c=>{const L=nLoop(c,"lowpass",300,6),o=c.createOscillator(),og=c.createGain();o.frequency.value=5.2;og.gain.value=170;o.connect(og);og.connect(L.f.frequency);o.start();L.o=o;return L;};
-function sStopLoops(){["fireS","pourS","drainS"].forEach(k=>{const L=AU[k];if(!L)return;try{L.s.stop()}catch(e){}if(L.o)try{L.o.stop()}catch(e){}AU[k]=null;});}
+function sStopLoops(){["fireS","pourS","drainS","rk"].forEach(k=>{const L=AU[k];if(!L)return;try{L.s.stop()}catch(e){}if(L.o)try{L.o.stop()}catch(e){}AU[k]=null;});}
 function burst(c,t,type,freq,Q,gain,dur){const n=noiseSrc(c),f=c.createBiquadFilter(),g=c.createGain();f.type=type;f.frequency.value=freq;f.Q.value=Q;
   g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,gain),t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
   n.connect(f);f.connect(g);g.connect(AU.master);n.start(t,Math.random()*1.5);n.stop(t+dur+.03);}
@@ -656,7 +684,7 @@ function wStep(dt){const W=G.W,n=W.n,h=W.h,u=W.u,F=W.F,S=W.s;
   let up=u[0];for(let j=1;j<n;j++){const cur=u[j];u[j]=cur+.25*(up+u[j+1]-2*cur);up=cur;}}
 // 물에 잠긴 몸체에 부력·물 저항, 그리고 몸체가 수면을 밀어 물결 만들기 (물리 한 단계마다)
 function waterForces(){if(!G||!G.W||G.W.vol<1)return;const {Body}=Matter,W=G.W,eng=G.engine,gy=eng.gravity.y,gs=eng.gravity.scale;
-  const list=[];for(const p of G.pieces)if(!p.dead&&p.body)list.push(p.body);for(const B of G.bombs)list.push(B.b);
+  const list=[...new Set(G.pieces.filter(p=>!p.dead&&p.body).map(p=>p.body))];for(const B of G.bombs)list.push(B.b);
   for(const b of list){const parts=b.parts.length>1?b.parts.slice(1):[b];let sub=0,cross=false;
     for(const pt of parts){const bb=pt.bounds,cx=pt.position.x,ys=surfY(cx);if(bb.max.y<=ys+.5)continue;
       const hg=Math.max(1,bb.max.y-bb.min.y),fr=clamp((bb.max.y-ys)/hg,0,1),A=pt.area*fr;sub+=A;
@@ -773,7 +801,7 @@ function flameStep(dt){const A=G.fl,gf=gfac(),wv=G.W.vol>1,kx=Math.pow(gf>.3?.93
   for(let i=A.length-1;i>=0;i--){const q=A[i];q.life-=dt;
     if(q.life>0){q.vy-=300*gf*dt;q.vx+=Math.sin(G.time*8+q.sd+q.y*.045)*110*dt;q.vx*=kx;q.vy*=ky;q.x+=q.vx*dt;q.y+=q.vy*dt;if(wv&&q.y>surfY(q.x))q.life=0;}
     // 폭발 연기 몫을 남겨 두려고 불꽃에서 나오는 연기는 100개까지만
-    if(q.life<=0){if(G.nSmoke<100&&Math.random()<(.1*gf+.03)*(G.fireTot>0||G.fb.length?1:.12))smoke(q.x,q.y,q.vx*.3,q.vy*.3-10*gf,rnd(5,9),rnd(.22,.34));A[i]=A[A.length-1];A.pop();}}}
+    if(q.life<=0){if(G.nSmoke<100&&Math.random()<(.1*gf+.03)*(G.fireTot>0||(G.fb.length&&burns())?1:burns()?.12:.03))smoke(q.x,q.y,q.vx*.3,q.vy*.3-10*gf,rnd(5,9),rnd(.22,.34));A[i]=A[A.length-1];A.pop();}}}
 // 공중에 문지른 불 → 떨어지는 불덩이. 조각에 닿으면 옮겨붙고, 바닥에선 잠시 타오름
 function globStep(dt,budget){const A=G.fb,g=gW(),wv=G.W.vol>1;let used=0;
   for(let i=A.length-1;i>=0;i--){const o=A[i];o.life-=dt;let dead=o.life<=0||o.dead;
@@ -812,15 +840,14 @@ function wetStep(dt){G.wetT+=dt;G.ctT+=dt;const doC=G.W.vol>1&&G.ctT>.1;if(doC)G
 // ── 유리 녹기 ──
 // 유리·돌은 불이 붙지 않음. 돌은 그을리고 잠깐 달아오르기만 하고, 유리는 칸마다 온도 tg(0~1.6)가 있어
 // 불을 대면 오르고(붉게 → 주황 → 노랗게 빛남) 떼면 천천히 식음. 1이 넘은 채로 오래 두면 그 칸이 녹아
-// 녹은 유리 방울(G.md)이 되어 표면을 타고 흘러내림 → 아래에 조각이 맞닿아 있으면 그대로 넘어가 흐르고,
-// 없으면 가장자리에 매달렸다가 똑 떨어져 다른 조각이나 바닥(G.gp 웅덩이)에 닿아 퍼짐.
-// 식으면(기다리거나 물) 그 자리에 굳은 유리로 남고, 녹은 유리로 이어진 조각끼리는 붙어 버림(G.fz 용접 → 같이 떨어지고 같이 움직임).
+// 녹은 유리(G.md)는 꿀보다 훨씬 되직해서 받치는 유리도 함께 물러져 있어야(주변까지 달궈야) 아주 천천히 처져 흐르고,
+// 아니면 그 자리에 불룩하게 고임. 가장자리에선 매달려 늘어지다 아래 조각에 닿으면 틈을 메우며 이어 붙고, 무거우면 실을 끌며 똑 떨어짐.
+// 닿는 유리 조각과는 들러붙고, 식으면(기다리거나 물) 굳은 유리로 남으며 이어진 조각끼리는 붙어 버림(G.fz → 묶음 몸체 · 벽 칸에 붙으면 고정).
 // 물에 닿으면 확 식으며 김이 나고, 아주 뜨거울 땐 잔금이 감(열충격).
 const MD_MAX=40,GP_MAX=28;
-let FG=0;
 function heatAt(p,lx,ly,R,s){const {d,h,cols,cs}=p;
   if(mat()==="stone"){cellsIn(p,lx,ly,R,i=>{if(d[i]>=1)return;if(d[i]<.26){d[i]=Math.min(.26,d[i]+s*.05);p.dirty=true;}const v=Math.min(.24,h[i]+s*.2);if(h[i]<v)h[i]=v;});p.hot=true;return;}
-  if(!p.tg){p.tg=new Float32Array(d.length);p.mf=new Float32Array(d.length);}
+  if(!p.tg){p.tg=new Float32Array(d.length);p.mf=new Float32Array(d.length);p.tx=new Float32Array(d.length);}
   const tg=p.tg;
   R=Math.max(R*2.2,24);cellsIn(p,lx,ly,R,i=>{if(d[i]>=1)return;const dd=Math.hypot((i%cols+.5)*cs-lx,((i/cols|0)+.5)*cs-ly)/R;tg[i]=Math.min(1.6,tg[i]+s*.5*Math.pow(1-dd,1.6));});
   p.gh=true;p.hot=true;}
@@ -834,7 +861,7 @@ function glassStep(dt){let st=0;
       if(c)tg[i]+=(s/c-tg[i])*kd;}
     for(let i=0;i<tg.length;i++){let t=tg[i];if(t<=0)continue;if(d[i]>=1){tg[i]=0;continue;}
       if(wt[i]>.35&&t>.3){if(t>qt){qt=t;qi=i;}t=Math.min(t,.08+t*.06);}
-      t-=dt*(.075+.08*t);if(t<.003)t=0;tg[i]=t;
+      t-=dt*(.075+.08*t);if(t<.003)t=0;tg[i]=t;if(p.tx&&t>p.tx[i])p.tx[i]=t;   // tx: 가장 뜨거웠던 온도 (물렁해졌던 자리는 식을 때 옆 조각과 붙음)
       if(t>.2){const gl=Math.min(1,Math.pow((t-.2)/.85,1.1));if(h[i]<gl)h[i]=gl;}
       if(t>1){mf[i]+=dt*(t-1)*1.7;if(mf[i]>=1){meltCell(p,i);continue;}}
       if(t>mx)mx=t;if(t>.6){n++;sx+=i%cols;sy+=(i/cols)|0;}}
@@ -844,139 +871,238 @@ function glassStep(dt){let st=0;
     if(n){const c=toWorld(p,(sx/n+.5)*cs,(sy/n+.5)*cs);G.glows.push({x:c.x,y:c.y,n:n*cs*cs/90});}
     if(p.gm&&mx<.5){p.gm=false;fuseAround(p);}
     if(mx===0)p.gh=false;}}
-// 칸 하나가 녹음: 구멍(깨끗한 단면)이 되고 그만큼 녹은 유리가 가까운 방울에 보태짐
-function meltCell(p,i){const {cols,cs,d,tg}=p,T=tg[i];d[i]=1.35;p.cl[i]=1;p.hasCl=true;p.bn[i]=0;tg[i]=0;p.shapeDirty=true;p.needMask=true;p.gm=true;
-  const lx=(i%cols+.5)*cs,ly=((i/cols|0)+.5)*cs;let best=null,bd=cs*9;
-  // 구멍 둘레는 녹아서 두꺼워진 유리 (은은하게 짙은 띠 · 구멍 안쪽은 어차피 지워지고 남은 칸 위에만 남음)
-  const x=mkCtx(p),R=Math.max(7,cs*2.4),g=x.createRadialGradient(lx,ly,0,lx,ly,R),e=isDark()?"16,34,40":"48,98,106";
-  g.addColorStop(0,`rgba(${e},.1)`);g.addColorStop(.6,`rgba(${e},.08)`);g.addColorStop(1,`rgba(${e},0)`);x.fillStyle=g;x.beginPath();x.arc(lx,ly,R,0,7);x.fill();
-  const w=toWorld(p,lx,ly);
-  for(const m of G.md)if((m.p===p&&m.st<2)||(m.st===2&&m.from===p&&m.age<.4)){const dd=Math.hypot(m.x-w.x,m.y-w.y);if(dd<bd){bd=dd;best=m;}}
-  if(!best&&G.md.length>=MD_MAX)best=G.md.find(m=>m.p===p&&m.st<2);
-  if(best){best.vol+=1;best.T=Math.max(best.T,T);return;}
+// 칸 하나가 녹음: 구멍이 되고(녹아 오그라든 도톰한 테가 둥글게 남음), 녹은 유리는 바로 아래 남은 유리 위로 처져 가까운 방울에 보태짐
+const drip=o=>Object.assign({p:null,lx:0,ly:0,x:0,y:0,vx:0,vy:0,vol:1,T:1,st:0,tr:[],wa:0,from:null,age:0,hl:0,ck:0},o);
+const cellOf=(p,lx,ly)=>{const gx=Math.floor(lx/p.cs),gy=Math.floor(ly/p.cs);return gx>=0&&gy>=0&&gx<p.cols&&gy<p.rows?gy*p.cols+gx:-1;};
+function meltCell(p,i){const {cols,cs,d,tg}=p,T=tg[i];d[i]=1.35;p.cl[i]=2;p.hasCl=true;p.bn[i]=0;tg[i]=0;p.shapeDirty=true;p.needMask=true;p.gm=true;
+  const lx=(i%cols+.5)*cs,ly=((i/cols|0)+.5)*cs;p.ml=true;
+  const f=p.f,w=toWorld(p,lx,ly);let best=null,bd=cs*8;
+  for(const m of G.md)if(m.p===p&&m.st!==2&&!m.hang){const dd=Math.hypot(m.x-w.x,m.y-w.y);if(dd<bd){bd=dd;best=m;}}
+  if(!best&&G.md.length>=MD_MAX)best=G.md.find(m=>m.p===p&&m.st!==2);
+  if(best){best.vol+=1;best.T=Math.max(best.T,T);if(best.st===3&&!best.hang)best.st=0;return;}
   if(G.md.length>=MD_MAX)return;
-  G.md.push({p,lx,ly,x:w.x,y:w.y,vx:0,vy:0,vol:1,T,st:2,tr:[],wa:0,from:p,age:0});}
+  // 아래(중력 쪽)로 가장 가까운 남은 유리 위에 고임 · 구멍이 커서 받칠 데가 없으면 방울로 떨어짐
+  for(let s=cs*.6;s<=cs*3.5;s+=cs*.5){const qx=lx+f.s*s,qy=ly+f.c*s;
+    if(solidAt(p,qx,qy)){const v=toWorld(p,qx,qy),m=drip({p,lx:qx,ly:qy,x:v.x,y:v.y,T,from:p});m.tr.push([qx,qy,mdW(m)*.8]);G.md.push(m);return;}}
+  G.md.push(drip({x:w.x,y:w.y,T,st:2,from:p}));}
 function solidAt(p,lx,ly){const gx=Math.floor(lx/p.cs),gy=Math.floor(ly/p.cs);return gx>=0&&gy>=0&&gx<p.cols&&gy<p.rows&&p.d[gy*p.cols+gx]<1;}
 function wetNear(x,y,r){const D=G.dr;if(!D.length)return false;const H=12,cx=Math.floor(x/H)+80,cy=Math.floor(y/H)+400;
   for(let ox=-1;ox<=1;ox++)for(let oy=-1;oy<=1;oy++){const a=G.hash.get((cx+ox)*8192+cy+oy);if(a)for(const j of a){const q=D[j];if(q&&Math.hypot(q.x-x,q.y-y)<r)return true;}}return false;}
-const mdW=m=>Math.min(m.p?Math.max(6,m.p.cs*1.6):8,2.4+Math.sqrt(m.vol)*2.3);
-// 녹은 방울 움직이기: 0 표면을 타고 흐름 · 1 가장자리에 매달림 · 2 떨어지는 중 · 3 멈춰서 식는 중(흐른 자국만)
-function dripStep(dt){const A=G.md;if(!A.length&&!G.gp.length)return;const gf=Math.max(.2,gfac()),wv=G.W.vol>1;
+const mdW=m=>Math.min(m.p?Math.max(10,m.p.cs*4):14,4+Math.sqrt(m.vol)*3.2)*(m.sp?1.3:1);
+// 녹은 유리 움직이기: 0 표면 위(받치는 유리도 물러져 있어야 아주 천천히 흐름) · 1 가장자리에 매달려 늘어짐 · 2 떨어지는 중 · 3 굳는 중
+// 꿀보다 훨씬 되직해서 주변이 안 녹았으면 그 자리에 불룩하게 고여 있고, 닿는 유리 조각과는 들러붙음
+const VFLOW=9;
+function dripStep(dt){const A=G.md;
+  // 녹은 유리로 이어진 곳이 식으면 붙임
+  for(const L of G.fz)if(!L.on&&!L.dead&&(!L.m||L.m.T<.5||A.indexOf(L.m)<0))weld(L);
+  if(!A.length&&!G.gp.length)return;const gf=Math.max(.2,gfac()),wv=G.W.vol>1;
   for(let k=A.length-1;k>=0;k--){const m=A[k];m.age+=dt;
     if(m.p&&m.p.dead){A[k]=A[A.length-1];A.pop();continue;}
-    // 식기: 클수록 천천히 · 물방울·물에 닿거나 젖은 칸 위면 확 식음(김)
-    m.T-=dt*(.09+.04*m.T)*(1.25-.3*Math.min(1,m.vol/4));
-    if(m.st<2&&m.p){const w=toWorld(m.p,m.lx,m.ly);m.x=w.x;m.y=w.y;}
-    const gx=m.p?Math.floor(m.lx/m.p.cs):0,gy=m.p?Math.floor(m.ly/m.p.cs):0,ci=m.p&&gx>=0&&gy>=0&&gx<m.p.cols&&gy<m.p.rows?gy*m.p.cols+gx:-1;
-    if(m.T>.35&&((wv&&m.y>surfY(m.x)-2)||(ci>=0&&m.p.wt[ci]>.35)||wetNear(m.x,m.y,mdW(m)+8))){steamP(m.x,m.y,Math.round(2+m.T*3),1.2);sSteam(.8);if(m.T>.7)sCrackle(.6);m.T=Math.min(m.T,.12);}
-    if(m.st===0){const p=m.p,f=p.f,dlx=f.s,dly=f.c,v=36*Math.pow(clamp((m.T-.5)/.6,0,1),1.5)*(.5+.5*Math.min(1,m.vol/3))*gf;
-      if(v<.6||m.vol<.12){m.st=3;continue;}
-      m.wa=(m.wa+rnd(-1,1)*dt*4)*Math.pow(.92,dt*60);
-      const s=v*dt,nlx=m.lx+(dlx+dly*m.wa*.35)*s,nly=m.ly+(dly-dlx*m.wa*.35)*s;
-      if(solidAt(p,nlx,nly)){m.lx=nlx;m.ly=nly;m.vol-=s*.011;const L=m.tr[m.tr.length-1];if(!L||Math.hypot(L[0]-nlx,L[1]-nly)>2.2)m.tr.push([nlx,nly,mdW(m)]);continue;}
-      // 바로 아래(4px 안)에 맞닿은 조각이 있으면 넘어가서 계속 흐름 (그 조각과 붙을 자리)
-      const w=toWorld(p,nlx,nly);let hit=null;for(const o of [0,2,4]){const h=pieceAt(w.x+f.s*o,w.y+f.c*o);if(h){hit=h;break;}}
-      if(hit&&hit.p===p){m.lx=hit.L.x;m.ly=hit.L.y;continue;}
-      if(hit){const q=hit.p,n={p:q,lx:hit.L.x,ly:hit.L.y,x:w.x,y:w.y,vx:0,vy:0,vol:m.vol,T:m.T,st:0,tr:[[hit.L.x,hit.L.y,mdW(m)]],wa:m.wa,from:p,age:0};
-        m.st=3;m.vol=0;A.push(n);if(mat()==="glass")link(p,q,w.x,w.y,n);continue;}
-      m.st=1;m.ht=0;continue;}
-    if(m.st===1){const p=m.p;m.ht+=dt;
-      // 식어 버리면 고드름처럼 굳음 · 아니면 무게만큼 늘어지다가 똑
-      if(m.T<.55){m.st=3;continue;}
-      if(m.ht>.3+.35/Math.max(.6,m.vol)){const w=toWorld(p,m.lx,m.ly),hy=hangY(m),f=p.f;
-        A.push({p:null,lx:0,ly:0,x:w.x+f.s*hy,y:w.y+f.c*hy,vx:p.pin?0:p.body.velocity.x*60,vy:30+(p.pin?0:p.body.velocity.y*60),vol:m.vol*.85,T:m.T,st:2,tr:[],wa:0,from:p,age:0,th:{x:w.x,y:w.y,life:.2}});
-        m.vol*=.15;m.st=3;sPlip(.25);}
+    const p=m.p;
+    if(p&&m.st!==2&&!solidAt(p,m.lx,m.ly)){const f=p.f;let ok=false;
+      for(let s=p.cs*.5;s<=p.cs*10;s+=p.cs*.5){const qx=m.lx+f.s*s,qy=m.ly+f.c*s;if(solidAt(p,qx,qy)){m.lx=qx;m.ly=qy;m.tr=[[qx,qy,mdW(m)*.86]];if(m.st===1)m.st=0;ok=true;break;}}
+      // 받칠 데가 없으면 가까운 남은 유리에 실처럼 매달린 채 천천히 늘어지며 떨어짐 → 아래 조각에 닿으면 그 실로 붙음
+      if(!ok){const w=toWorld(p,m.lx,m.ly);let an=null;
+        for(let r=p.cs;r<=p.cs*3&&!an;r+=p.cs)for(let i=0;i<8;i++){const a=i*.785,qx=m.lx+Math.cos(a)*r,qy=m.ly+Math.sin(a)*r;if(solidAt(p,qx,qy)){an={p,lx:qx,ly:qy,life:.8,max:.8};break;}}
+        Object.assign(m,{p:null,x:w.x,y:w.y,st:2,vx:0,vy:0,tr:[],th:m.T>.6?an:null,hang:false,from:p,age:0});continue;}}
+    if(m.st!==2&&p){const w=toWorld(p,m.lx,m.ly);m.x=w.x;m.y=w.y;
+      // 흐른 자국 밑이 녹아 뚫리면 그 위쪽 자국은 구멍 테로 오그라들어 사라짐 (머리 쪽 이어진 부분만 남김)
+      if(p.ml&&m.tr.length>1&&(m.tc=(m.tc||0)-dt)<=0){m.tc=.15;for(let i=m.tr.length-1;i>=0;i--)if(!solidAt(p,m.tr[i][0],m.tr[i][1])){m.tr=m.tr.slice(i+1);break;}}}
+    const ci=p&&m.st!==2?cellOf(p,m.lx,m.ly):-1,sub=ci>=0&&p.tg?p.tg[ci]:0;
+    // 식기: 클수록 천천히 · 찬 유리 위면 더 빨리 · 받치는 유리가 더 뜨거우면 다시 달궈짐 · 물에 닿으면 확 식음(김)
+    m.T-=dt*(.07+.04*m.T)*(1.25-.3*Math.min(1,m.vol/4))*(ci>=0?1.6-.6*Math.min(1,sub):1);
+    if(sub>m.T)m.T+=(sub-m.T)*Math.min(1,dt*2.5);
+    if(m.T>.35&&((wv&&m.y>surfY(m.x)-2)||(ci>=0&&p.wt[ci]>.35)||wetNear(m.x,m.y,mdW(m)+8))){steamP(m.x,m.y,Math.round(2+m.T*3),1.2);sSteam(.8);if(m.T>.7)sCrackle(.6);m.T=Math.min(m.T,.12);}
+    const soft=clamp((m.T-.7)/.6,0,1);
+    if(m.st<2&&m.T>.5&&(m.ck-=dt)<=0){m.ck=.12;stick(m);}
+    if(m.st===0){
+      if(m.T<.45){m.st=3;continue;}
+      const f=p.f,dlx=f.s,dly=f.c;
+      const bed=clamp((sub-.8)/.4,0,1),v=VFLOW*soft*soft*bed*(.3+.7*Math.min(1,m.vol/3))*gf;
+      if(v<.25)continue;
+      m.wa=(m.wa+rnd(-1,1)*dt*2)*Math.pow(.95,dt*60);
+      const s=Math.min(v*dt,1.2),nlx=m.lx+(dlx+dly*m.wa*.2)*s,nly=m.ly+(dly-dlx*m.wa*.2)*s;
+      if(solidAt(p,nlx,nly)){m.lx=nlx;m.ly=nly;const L=m.tr[m.tr.length-1];if(!L||Math.hypot(L[0]-nlx,L[1]-nly)>1.6){m.wj=(m.wj||0)*.82+rnd(-.05,.05);m.tr.push([nlx,nly,mdW(m)*(.86+m.wj)]);if(m.tr.length>160)m.tr.splice(1,1);}continue;}
+      // 가장자리: 바로 아래 맞닿은 조각이 있으면 틈을 메우며 넘어가 붙고, 없으면 매달려 늘어짐
+      const w=toWorld(p,m.lx,m.ly);let hit=null;for(const o of [2,4,6]){const h=pieceAt(w.x+f.s*o,w.y+f.c*o);if(h&&h.p!==p){hit=h;break;}}
+      if(hit){bridge(m,hit);continue;}
+      m.st=1;m.hl=0;continue;}
+    if(m.st===1){
+      if(m.T<.5){m.st=3;m.hang=true;continue;}
+      const f=p.f;m.hl+=dt*soft*(2.5+m.vol*2)*gf;
+      const r=mdW(m),tip=m.hl+r*.9,h=pieceAt(m.x,m.y+tip);
+      if(h&&h.p!==p){bridge(m,h);continue;}
+      // 무거워지면 끝이 늘어나다 똑 떨어짐 (가늘고 긴 실을 끌며 천천히)
+      if(m.hl>6+m.vol*3&&m.vol>1){A.push(drip({x:m.x,y:m.y+tip,vx:p.pin||p.anc?0:p.body.velocity.x*60,vy:10,vol:m.vol*.7,T:m.T,st:2,from:p,th:{p,lx:m.lx,ly:m.ly,life:.9,max:.9}}));
+        m.vol*=.3;m.hl*=.3;sPlip(.25);}
       continue;}
-    if(m.st===2){m.vy+=1100*gf*dt;m.vx*=Math.pow(.99,dt*60);if(wv&&m.y>surfY(m.x)){m.vy*=Math.pow(.9,dt*60);m.vx*=Math.pow(.9,dt*60);}
+    if(m.st===2){const th=m.th&&m.th.life>0&&!m.th.p.dead;m.vy+=1100*gf*dt*(th?.28:1);m.vx*=Math.pow(.99,dt*60);if(wv&&m.y>surfY(m.x)){m.vy*=Math.pow(.9,dt*60);m.vx*=Math.pow(.9,dt*60);}
       m.x+=m.vx*dt;m.y+=m.vy*dt;if(m.th)m.th.life-=dt;
       const r=mdW(m)*.9;
       if(m.y>=G.vh-r){puddle(m.x,m.vol,m.T);A[k]=A[A.length-1];A.pop();continue;}
       const h=pieceAt(m.x,m.y+r);
-      if(h&&(h.p!==m.from||m.age>.12)){const L=toLocal(h.p,m.x,m.y+r*.5);
-        // 짧게 떨어져 바로 아래 조각에 닿으면 실처럼 이어진 채라 두 조각이 붙음
-        if(m.th&&m.th.life>0&&m.from&&!m.from.dead&&h.p!==m.from)link(m.from,h.p,m.x,m.y,m);
-        Object.assign(m,{p:h.p,lx:L.x,ly:L.y,st:0,tr:[[L.x,L.y,mdW(m)*1.5]],th:null});if(m.T>.6)sCrackle(.35);}
+      if(h&&(h.p!==m.from||m.age>.25)){const L=toLocal(h.p,m.x,m.y+r*.5);
+        // 실이 아직 이어져 있으면 두 조각이 그 실로 붙음
+        if(th&&h.p!==m.from){const a=toWorld(m.th.p,m.th.lx,m.th.ly),Lk=link(m.th.p,h.p,a.x,a.y,m.x,m.y+r*.5,m);if(Lk&&!Lk.br)Lk.br=Math.max(1.6,mdW(m)*.45);}
+        Object.assign(m,{p:h.p,lx:L.x,ly:L.y,st:0,tr:[[L.x,L.y,mdW(m)]],th:null,sp:1});if(m.T>.6)sCrackle(.35);}
       continue;}
-    // 3: 다 식으면 조각에 굳은 유리로 그려 넣고 목록에서 뺌
-    if(m.T<.2){if(m.p&&!m.p.dead&&m.tr.length)bakeDrip(m);A[k]=A[A.length-1];A.pop();}}
+    // 3: 굳는 중. 다시 달구면 다시 물러지고, 다 식으면 조각에 굳은 유리로 그려 넣음 (조각 밖으로 늘어진 고드름은 따로 남김)
+    if(p&&!m.hang&&sub>.95&&m.T>.7){m.st=0;continue;}
+    if(m.T<.2){if(p&&!p.dead){if(m.tr.length)bakeDrip(m);if(m.hang&&m.hl>1.5)G.ice.push({p,lx:m.lx,ly:m.ly,hl:m.hl,w:mdW(m)});}A[k]=A[A.length-1];A.pop();}}
+  for(let i=0;i<A.length;i++){const a=A[i];if(a.st===2||!a.p||a.hang)continue;
+    for(let j=A.length-1;j>i;j--){const b=A[j];if(b.p!==a.p||b.st===2||b.hang||Math.hypot(a.x-b.x,a.y-b.y)>(mdW(a)+mdW(b))*.42)continue;
+      const f=a.p.f,lo=f.s*(b.x-a.x)+f.c*(b.y-a.y)>0?b:a,hi=lo===a?b:a;
+      lo.vol+=hi.vol;lo.T=Math.max(lo.T,hi.T);if(lo.st===3&&lo.T>.45)lo.st=0;for(const L of G.fz)if(L.m===hi)L.m=lo;
+      A.splice(A.indexOf(hi),1);if(hi===a){i--;break;}}}
   for(let i=G.gp.length-1;i>=0;i--){const q=G.gp[i];if(q.T<=0)continue;
     if(wv&&surfY(q.x)<G.vh-2&&q.T>.3){steamP(q.x,G.vh-4,4,1.4);sSteam(.9);q.T=.1;}
-    q.T=Math.max(0,q.T-dt*.08);}
-  // 녹은 유리로 이어진 곳이 식으면 붙임
-  for(const L of G.fz)if(!L.on&&!L.dead&&(!L.m||L.m.T<.5||A.indexOf(L.m)<0))weld(L);}
-const hangY=m=>Math.min(3+m.ht*26,mdW(m)*2.4);
+    q.T=Math.max(0,q.T-dt*.08);}}
+// 녹은 유리가 틈을 건너 맞닿은 조각에 닿음: 두 조각을 잇는 유리 다리 + 닿은 쪽에 고이는 방울 (식으면 붙음)
+function bridge(m,h){const p=m.p,q=h.p,r=mdW(m),w=toWorld(q,h.L.x,h.L.y),n=drip({p:q,lx:h.L.x,ly:h.L.y,x:w.x,y:w.y,vol:m.vol*.5,T:m.T,from:p});
+  n.tr.push([h.L.x,h.L.y,r*.8]);G.md.push(n);
+  const L=link(p,q,m.x,m.y,w.x,w.y,n);if(L&&!L.br)L.br=r*.8;
+  m.vol*=.5;m.st=3;m.hang=false;m.hl=0;if(m.T>.6)sCrackle(.3);}
+// 녹은 방울 둘레에 다른 조각이 닿아 있으면 들러붙음
+function stick(m){const p=m.p,cx=m.x,cy=m.y+(m.st===1?m.hl:0),r=mdW(m)*.55+2.5;
+  for(let i=0;i<8;i++){const a=i*.785,x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r,h=pieceAt(x,y);
+    if(h&&h.p!==p){const L=link(p,h.p,m.x,m.y,x,y,m);if(L&&!L.br)L.br=r*.9;return;}}}
+const hangPts=(x,y,hl,r)=>{const L=hl+r*.9,nk=.66-.18*Math.min(1,hl/(r*2.2));
+  return [[x,y-r*.25,r*.95],[x,y+L*.3,r*nk],[x,y+L*.62,r*.98],[x,y+L*.84,r*.86],[x,y+L,r*.34]];};
+// 흐르는 머리: 둥근 공이 아니라 흐른 방향으로 부풀어 뭉툭하게 오므라든 혀 모양 · 너무 짧으면 위로 늘려 처진 모양으로
+function lobe(P,dx,dy){const n=P.length,h=P[n-1];
+  if(n>1){const a=P[Math.max(0,n-4)],ex=h[0]-a[0],ey=h[1]-a[1],el=Math.hypot(ex,ey);if(el>.5){dx=ex/el;dy=ey/el;}}
+  const w=h[2],out=P.slice(0,n-1);let L=0;for(let i=1;i<n;i++)L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);
+  if(L<w*.9){const a=P[0],need=w*.9-L;out.unshift([a[0]-dx*need,a[1]-dy*need,a[2]*.78]);}
+  out.push([h[0],h[1],w*1.06],[h[0]+dx*w*.26,h[1]+dy*w*.26,w*.94],[h[0]+dx*w*.48,h[1]+dy*w*.48,w*.58]);return out;}
 function puddle(x,vol,T){for(const q of G.gp)if(Math.abs(q.x-x)<4+Math.sqrt(q.vol)*5){q.x=(q.x*q.vol+x*vol)/(q.vol+vol);q.vol+=vol;q.T=Math.max(q.T,T);return;}
   if(G.gp.length>=GP_MAX)G.gp.shift();G.gp.push({x,vol,T});if(T>.5)sCrackle(.4);}
 // 물에 확 식은 자리에 가는 잔금
 function quenchCracks(p,lx,ly,t){const x=mkCtx(p),n=3+((t*4)|0);x.save();ownCells(x,p);
   for(let i=0;i<n;i++){let a=rnd(0,6.283),px=lx,py=ly;const len=p.cs*rnd(.8,2.2)*t,pts=[[px,py]];for(let s=0;s<len;s+=2.5){a+=rnd(-.5,.5);px+=Math.cos(a)*2.5;py+=Math.sin(a)*2.5;pts.push([px,py]);}glassLine(x,pts);}
   x.restore();p.dirty=true;}
-// 녹은 유리 그리기 (흐른 자국 + 머리): T가 높을수록 주황 → 노랗게 빛나고, 식으면 맑은 유리 (윤곽 · 하이라이트)
-function moltenPath(c,pts,T,head){if(!pts.length)return;const u=clamp((T-.35)/.8,0,1),dk=isDark();
-  const path=w=>{c.lineWidth=w;c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);if(pts.length===1)c.lineTo(pts[0][0]+.01,pts[0][1]+.3);c.stroke();};
-  const w=pts.reduce((a,q)=>a+q[2],0)/pts.length,hd=pts[pts.length-1];
-  c.lineCap="round";c.lineJoin="round";
-  const ga=1-u*.75;
-  if(ga>0){c.globalAlpha=ga;c.strokeStyle=dk?"rgba(20,40,46,.55)":"rgba(52,104,112,.42)";path(w+1.3);
-    c.strokeStyle=dk?"rgba(150,196,204,.42)":"rgba(186,226,230,.72)";path(w);
-    if(head){c.fillStyle=c.strokeStyle;c.beginPath();c.arc(hd[0],hd[1],w*.62,0,7);c.fill();}
-    c.strokeStyle=dk?"rgba(225,248,255,.5)":"rgba(255,255,255,.9)";c.lineWidth=Math.max(.5,w*.22);c.beginPath();for(let i=0;i<pts.length;i++){const [x,y]=pts[i];i?c.lineTo(x-w*.22,y-w*.12):c.moveTo(x-w*.22,y-w*.12);}c.stroke();}
-  if(u>0){c.globalAlpha=u;c.strokeStyle=`rgb(255,${(90+90*u)|0},${(20+30*u)|0})`;path(w);
-    if(head){c.fillStyle=c.strokeStyle;c.beginPath();c.arc(hd[0],hd[1],w*.62,0,7);c.fill();}
-    c.globalAlpha=u*u;c.strokeStyle="rgb(255,236,175)";path(w*.42);}
+// 굵기가 변하는 띠 (양 끝은 둥글게) · pts: [x,y,굵기]
+function ribbon(c,pts,k,ox,oy,br){const n=pts.length;c.beginPath();
+  if(br){const e=pts[n-1],r=Math.max(.3,br*k);c.moveTo(e[0]+ox+r,e[1]+oy);c.arc(e[0]+ox,e[1]+oy,r,0,-6.2832,true);c.closePath();}
+  if(n===1){const r=Math.max(.3,pts[0][2]*k*.5);c.moveTo(pts[0][0]+ox+r,pts[0][1]+oy);c.arc(pts[0][0]+ox,pts[0][1]+oy,r,0,-6.2832,true);return;}
+  const Lx=[],Ly=[],Rx=[],Ry=[],T=[];let tx=0,ty=1;
+  for(let i=0;i<n;i++){const a=pts[i>0?i-1:0],b=pts[i<n-1?i+1:n-1],dx=b[0]-a[0],dy=b[1]-a[1],dl=Math.hypot(dx,dy);if(dl>1e-6){tx=dx/dl;ty=dy/dl;}T.push(Math.atan2(ty,tx));
+    const r=Math.max(.3,pts[i][2]*k*.5),x=pts[i][0]+ox,y=pts[i][1]+oy;Lx.push(x-ty*r);Ly.push(y+tx*r);Rx.push(x+ty*r);Ry.push(y-tx*r);}
+  c.moveTo(Lx[0],Ly[0]);for(let i=1;i<n;i++)c.lineTo(Lx[i],Ly[i]);
+  const e=pts[n-1],s=pts[0];
+  c.arc(e[0]+ox,e[1]+oy,Math.max(.3,e[2]*k*.5),T[n-1]+Math.PI/2,T[n-1]-Math.PI/2,true);
+  for(let i=n-1;i>=0;i--)c.lineTo(Rx[i],Ry[i]);
+  c.arc(s[0]+ox,s[1]+oy,Math.max(.3,s[2]*k*.5),T[0]-Math.PI/2,T[0]-Math.PI*1.5,true);c.closePath();}
+// 녹은 유리 그리기: 뜨거울수록 검붉은 테 → 주황 → 노란 속으로 빛나고, 식으면 맑고 도톰한 유리 (가장자리 굴절 그늘 · 빛 받는 쪽 하이라이트 · 반짝점)
+// bulb: 머리(끝) 방울을 몇 배 굵게
+function moltenPath(c,pts,T,fr,dx=0,dy=1){if(!pts.length)return;const u=clamp((T-.35)/.8,0,1),dk=isDark();
+  if(fr)pts=lobe(pts,dx,dy);
+  let w=0;for(const q of pts)w+=q[2];w/=pts.length;const o=w*.15,S=(k,ox,oy)=>ribbon(c,pts,k,ox,oy,0);
+  const ga=1-u*.85;
+  if(ga>.01){c.globalAlpha=ga;c.lineJoin="round";
+    S(1,0,0);c.fillStyle=dk?"rgba(70,122,132,.36)":"rgba(186,228,232,.5)";c.fill();
+    c.lineWidth=Math.max(.8,w*.15);c.strokeStyle=dk?"rgba(4,16,20,.72)":"rgba(42,96,104,.6)";c.stroke();
+    S(.56,o*.6,o*.8);c.fillStyle=dk?"rgba(0,12,16,.3)":"rgba(64,126,134,.2)";c.fill();
+    S(.24,-o,-o*.8);c.fillStyle=dk?"rgba(220,245,250,.45)":"rgba(255,255,255,.9)";c.fill();}
+  if(u>.01){c.globalAlpha=u;
+    S(1,0,0);c.fillStyle="rgb(178,46,10)";c.fill();
+    S(.76,-o*.3,-o*.3);c.fillStyle=`rgb(255,${(112+78*u)|0},${(24+34*u)|0})`;c.fill();
+    c.globalAlpha=u*u;S(.4,-o*.5,-o*.6);c.fillStyle="rgb(255,242,196)";c.fill();}
   c.globalAlpha=1;}
-function bakeDrip(m){const x=mkCtx(m.p);moltenPath(x,m.tr,0,true);m.p.dirty=true;}
+function bakeDrip(m){const x=mkCtx(m.p);x.save();ownCells(x,m.p);moltenPath(x,m.tr,0,!m.hang,m.p.f.s,m.p.f.c);x.restore();m.p.dirty=true;}
 function drawMolten(c){
-  for(const m of G.md){if(m.st===2){const r=mdW(m)*.75,u=clamp((m.T-.35)/.8,0,1);
-      if(m.th&&m.th.life>0){c.globalAlpha=m.th.life/.2;c.strokeStyle=u>.2?"rgb(255,150,50)":"rgba(160,210,215,.8)";c.lineWidth=Math.max(.4,r*.35*m.th.life/.2);c.beginPath();c.moveTo(m.th.x,m.th.y);c.lineTo(m.x,m.y-r);c.stroke();c.globalAlpha=1;}
-      moltenPath(c,[[m.x,m.y-Math.min(10,Math.abs(m.vy)*.012),r*1.1],[m.x,m.y,r*1.6]],m.T,false);continue;}
+  // 틈을 건너 이어 붙은 유리 다리 · 가장자리에 굳은 고드름 (조각 밖으로 나와 있어서 따로 그림)
+  for(const L of G.fz){if(L.dead||!L.br||L.a.dead||L.b.dead)continue;const a=toWorld(L.a,L.ax,L.ay),b=toWorld(L.b,L.bx,L.by),w=L.br,T=L.m&&!L.on&&G.md.includes(L.m)?L.m.T:0;
+    moltenPath(c,[[a.x,a.y,w],[(a.x+b.x)/2,(a.y+b.y)/2,w*.8],[b.x,b.y,w]],T,0);}
+  for(const q of G.ice){if(q.p.dead)continue;const w=toWorld(q.p,q.lx,q.ly);moltenPath(c,hangPts(w.x,w.y,q.hl,q.w),0,0);}
+  for(const m of G.md){
+    if(m.st===2){const r=mdW(m)*.75,u=clamp((m.T-.35)/.8,0,1),len=Math.min(12,Math.abs(m.vy)*.014)+r*.5;
+      if(m.th&&m.th.life>0&&!m.th.p.dead){const a=toWorld(m.th.p,m.th.lx,m.th.ly),k=m.th.life/m.th.max;c.globalAlpha=Math.min(1,k*1.6);
+        c.strokeStyle=u>.2?"rgb(255,150,50)":"rgba(160,210,215,.85)";c.lineWidth=Math.max(.35,r*.34*k);c.lineCap="round";
+        c.beginPath();c.moveTo(a.x,a.y);c.quadraticCurveTo(a.x+(m.x-a.x)*.5+m.vx*.01,a.y+(m.y-a.y)*.62,m.x,m.y-len);c.stroke();c.globalAlpha=1;}
+      moltenPath(c,[[m.x,m.y-len-r*.7,r*.2],[m.x,m.y-r*.55,r*.9],[m.x,m.y,r*1.25],[m.x,m.y+r*.4,r*.74]],m.T,0);continue;}
     if(!m.p||m.p.dead)continue;const p=m.p,pts=m.tr.map(q=>{const w=toWorld(p,q[0],q[1]);return [w.x,w.y,q[2]];});
-    if(m.st===0||m.st===1)pts.push([m.x,m.y,mdW(m)]);
-    moltenPath(c,pts,m.T,m.st<2);
-    if(m.st===1){const hy=hangY(m),r=mdW(m)*.75,f=p.f,bx=m.x+f.s*hy,by=m.y+f.c*hy;moltenPath(c,[[m.x,m.y,r*.9],[bx,by,r*1.7]],m.T,false);}}
+    if(m.st!==3||!m.hang)pts.push([m.x,m.y,mdW(m)]);
+    if(m.st===1||(m.st===3&&m.hang)){moltenPath(c,pts,m.T,0);moltenPath(c,hangPts(m.x,m.y,m.hl,mdW(m)),m.T,0);}
+    else moltenPath(c,pts,m.T,1,0,1);}
   const dk=isDark();
-  for(const q of G.gp){const w=5+Math.sqrt(q.vol)*6,h=2+Math.sqrt(q.vol)*1.5,u=clamp((q.T-.35)/.8,0,1),y=G.vh-h*.55;
-    c.globalAlpha=1-u*.7;c.fillStyle=dk?"rgba(120,170,180,.45)":"rgba(176,220,226,.7)";c.strokeStyle=dk?"rgba(20,40,46,.5)":"rgba(52,104,112,.45)";c.lineWidth=1;
+  for(const q of G.gp){const w=5+Math.sqrt(q.vol)*6,h=2.5+Math.sqrt(q.vol)*2,u=clamp((q.T-.35)/.8,0,1),y=G.vh-h*.55;
+    c.globalAlpha=1-u*.7;c.fillStyle=dk?"rgba(120,170,180,.45)":"rgba(176,220,226,.72)";c.strokeStyle=dk?"rgba(20,40,46,.5)":"rgba(52,104,112,.5)";c.lineWidth=1;
     c.beginPath();c.ellipse(q.x,y,w,h,0,Math.PI,0);c.lineTo(q.x+w,G.vh);c.lineTo(q.x-w,G.vh);c.closePath();c.fill();c.stroke();
-    c.strokeStyle=dk?"rgba(225,248,255,.45)":"rgba(255,255,255,.9)";c.lineWidth=1;c.beginPath();c.ellipse(q.x-w*.15,y-h*.25,w*.55,h*.45,0,Math.PI*1.1,Math.PI*1.7);c.stroke();
+    c.strokeStyle=dk?"rgba(225,248,255,.45)":"rgba(255,255,255,.92)";c.lineWidth=1.2;c.beginPath();c.ellipse(q.x-w*.15,y-h*.25,w*.55,h*.45,0,Math.PI*1.1,Math.PI*1.7);c.stroke();
     if(u>0){c.globalAlpha=u;c.fillStyle=`rgb(255,${(90+90*u)|0},30)`;c.beginPath();c.ellipse(q.x,y,w,h,0,Math.PI,0);c.lineTo(q.x+w,G.vh);c.lineTo(q.x-w,G.vh);c.closePath();c.fill();}}
   c.globalAlpha=1;}
 // 빛(더하기 합성 단계에서): 뜨거운 방울 둘레가 은은하게 밝음
-function drawMoltenGlow(c){for(const m of G.md){if(m.T<.5)continue;const s=mdW(m)*4+6;c.globalAlpha=Math.min(.55,(m.T-.5)*.8);c.drawImage(SPR.glow,m.x-s,m.y-s,s*2,s*2);}
+function drawMoltenGlow(c){for(const m of G.md){if(m.T<.5)continue;const s=mdW(m)*2.6+5;c.globalAlpha=Math.min(.32,(m.T-.5)*.5)*Math.min(1,.4+m.vol*.2);c.drawImage(SPR.glow,m.x-s,m.y-s,s*2,s*2);}
   for(const q of G.gp){if(q.T<.5)continue;const s=8+Math.sqrt(q.vol)*9;c.globalAlpha=Math.min(.5,(q.T-.5)*.8);c.drawImage(SPR.glow,q.x-s,G.vh-s*.6,s*2,s*1.2);}}
 // ── 녹은 유리로 붙이기 ──
-function link(a,b,wx,wy,m){if(a===b||a.dead||b.dead)return;for(const L of G.fz)if(!L.dead&&((L.a===a&&L.b===b)||(L.a===b&&L.b===a)))return;
-  const A=toLocal(a,wx,wy),B=toLocal(b,wx,wy);G.fz.push({a,b,ax:A.x,ay:A.y,bx:B.x,by:B.y,m,on:false,dead:false,c:null});}
+// 녹은 유리로 이어진 곳(G.fz)이 식으면 두 조각이 붙음. 이어진 묶음에 벽에 붙은 칸이 있으면 나머지도 그 자리에 고정(anc)되고,
+// 떨어져 있는 묶음은 물리 몸체 하나로 합쳐서 통째로 움직임 (끈으로 잇지 않아서 따로 놀거나 혼자 돌지 않음)
+// 이음 자리는 조각마다 자기 안쪽 점(a·b)으로 기억함 → 쪼개져도 그 점을 가진 조각이 이어받음
+function link(a,b,awx,awy,bwx,bwy,m){if(!a||!b||a===b||a.dead||b.dead)return null;
+  for(const L of G.fz)if(!L.dead&&((L.a===a&&L.b===b)||(L.a===b&&L.b===a))){if(!L.on&&m)L.m=m;return L;}
+  const A=toLocal(a,awx,awy),B=toLocal(b,bwx,bwy),L={a,b,ax:A.x,ay:A.y,bx:B.x,by:B.y,m,on:false,dead:false,br:0};G.fz.push(L);return L;}
 // 녹았던 조각이 식을 때: 녹았던 자리 둘레에서 맞닿은 다른 조각과 붙음
-function fuseAround(p){const {cols,rows,cs,d,mf}=p;let n=0;
-  for(let i=0;i<d.length&&n<6;i++){if(d[i]>=1||mf[i]<.12)continue;const x=i%cols,y=(i/cols)|0;
+function fuseAround(p){const {cols,cs,d,mf}=p,tx=p.tx;let n=0;
+  for(let i=0;i<d.length&&n<6;i++){if(d[i]>=1||(mf[i]<.12&&!(tx&&tx[i]>.9)))continue;const x=i%cols,y=(i/cols)|0;
     for(const [ox,oy] of [[1,0],[-1,0],[0,1],[0,-1]]){const lx=(x+.5+ox*.5)*cs+ox*3,ly=(y+.5+oy*.5)*cs+oy*3;if(solidAt(p,lx,ly))continue;
-      const w=toWorld(p,lx,ly),h=pieceAt(w.x,w.y);if(h&&h.p!==p){const before=G.fz.length;link(p,h.p,w.x-ox*2,w.y-oy*2,null);if(G.fz.length>before)n++;}}}}
+      let w=toWorld(p,lx,ly),h=pieceAt(w.x,w.y);for(const e of [4,7,11])if(!h||h.p===p){w=toWorld(p,lx+ox*e,ly+oy*e);h=pieceAt(w.x,w.y);}if(h&&h.p!==p){const before=G.fz.length,c=toWorld(p,(x+.5)*cs,(y+.5)*cs),L=link(p,h.p,c.x,c.y,w.x,w.y,null);if(G.fz.length>before){n++;L.br=cs*.9;}}}}}
 function weld(L){const a=L.a,b=L.b;if(a.dead||b.dead||!a.body||!b.body){L.dead=true;return;}
-  unweld(L);const A=toWorld(a,L.ax,L.ay),B=toWorld(b,L.bx,L.by),mx=(A.x+B.x)/2,my=(A.y+B.y)/2,ca=a.body.position,cb=b.body.position;
-  let tx=-(cb.y-ca.y),ty=cb.x-ca.x;const tn=Math.hypot(tx,ty)||1,o=Math.max(4,Math.min(a.cs,b.cs)*1.3);tx/=tn;ty/=tn;
-  L.c=[-1,1].map(s=>{const px=mx+tx*o*s,py=my+ty*o*s;return Matter.Constraint.create({bodyA:a.body,pointA:{x:px-ca.x,y:py-ca.y},bodyB:b.body,pointB:{x:px-cb.x,y:py-cb.y},length:0,stiffness:.85,damping:.15,render:{visible:false}});});
-  Matter.Composite.add(G.engine.world,L.c);
-  // 붙은 조각끼리는 서로 부딪히지 않게 같은 묶음 번호
-  let g=a.fg||b.fg||++FG;if(a.fg&&b.fg&&a.fg!==b.fg){const o2=b.fg;for(const q of G.pieces)if(q.fg===o2)setGroup(q,g);}
-  setGroup(a,g);setGroup(b,g);
-  if(!L.on){L.on=true;bead(a,L.ax,L.ay);bead(b,L.bx,L.by);addP({t:"glint",x:mx,y:my,s:9,life:.3,max:.3});sTing(.5);}
-  // 하나가 이미 떨어져 있으면 다른 쪽도 떨어짐 (붙은 채로 함께)
-  if(!a.pin&&b.pin)release(b);else if(!b.pin&&a.pin)release(a);}
-function setGroup(q,g){q.fg=g;if(q.body)for(const pt of q.body.parts)pt.collisionFilter.group=-g;}
-function unweld(L){if(L.c){Matter.Composite.remove(G.engine.world,L.c);L.c=null;}}
+  if(!L.on){L.on=true;bead(a,L.ax,L.ay);bead(b,L.bx,L.by);const w=toWorld(a,L.ax,L.ay);addP({t:"glint",x:w.x,y:w.y,s:9,life:.3,max:.3});sTing(.5);}
+  a.fg=b.fg=true;G.grpDirty=true;}
+function unweld(){G.grpDirty=true;}
+// 붙은 묶음 다시 맞추기 (붙거나 떨어지거나 쪼개진 다음 프레임에 한 번)
+function regroup(){G.grpDirty=false;const {Body}=Matter;
+  const live=G.pieces.filter(p=>!p.dead&&p.body&&(p.fg||p.anc||p.body.plugin.grp));if(!live.length)return;
+  const par=new Map();for(const p of live)par.set(p,p);
+  const find=q=>{while(par.get(q)!==q)q=par.get(q);return q;};
+  for(const L of G.fz)if(L.on&&!L.dead&&par.has(L.a)&&par.has(L.b)){const a=find(L.a),b=find(L.b);if(a!==b)par.set(a,b);}
+  const comps=new Map();for(const p of live){const r=find(p);let c=comps.get(r);if(!c)comps.set(r,c=[]);c.push(p);}
+  for(const C of comps.values()){
+    if(C.some(q=>q.pin)){for(const q of C){if(q.pin)continue;if(q.body.plugin.grp)unshare(q.body);if(!q.body.isStatic)Body.setStatic(q.body,true);q.anc=true;}continue;}
+    for(const q of C)if(q.anc){q.anc=false;if(q.body.isStatic)Body.setStatic(q.body,false);}
+    if(C.length===1){if(C[0].body.plugin.grp)unshare(C[0].body);continue;}
+    const B=C[0].body;if(B.plugin.grp&&B.plugin.grp.length===C.length&&C.every(q=>q.body===B))continue;
+    mergeBody(C);}}
+// 묶음을 몸체 하나로: 각 조각의 칸 사각형을 모두 부품으로 · 속도는 원래 몸체들의 넓이 가중 평균 · 잡고 있었으면 다시 잡음
+function mergeBody(C){const {Bodies,Body,Composite}=Matter,olds=[...new Set(C.map(q=>q.body))];
+  for(const q of C)q.f=frame(q);
+  let A=0,vx=0,vy=0,w=0;for(const b of olds){const a=b.area;A+=a;vx+=b.velocity.x*a;vy+=b.velocity.y*a;w+=b.angularVelocity*a;}
+  const hb=G.drag&&olds.includes(G.drag.b)?G.drag.b:null,held=hb?{x:hb.position.x+G.drag.c.pointB.x,y:hb.position.y+G.drag.c.pointB.y}:null;if(held)dropDrag();
+  if(G.ptr.pend&&olds.includes(G.ptr.pend))G.ptr.pend=null;
+  for(const b of olds){const g=b.plugin.grp;if(g)for(const q of g)if(!q.dead&&q.body===b&&!C.includes(q)){q.f=frame(q);buildBody(q,q.f,b);}
+    b.plugin.grp=null;Composite.remove(G.engine.world,b);}
+  const parts=[];
+  for(const q of C){const R=rectsOf(q),{c,s,cx,cy,th}=q.f;q.R0=R;
+    for(const r of R){const lx=r.x+r.w/2-q.W/2,ly=r.y+r.h/2-q.H/2,pt=Bodies.rectangle(cx+c*lx-s*ly,cy+s*lx+c*ly,r.w,r.h,Object.assign({angle:th},bopt()));pt.plugin.piece=q;parts.push(pt);}}
+  const b=Body.create(Object.assign({parts},bopt()));b.plugin.grp=C;b.plugin.piece=C[0];
+  for(const q of C){const f=q.f;q.body=b;q.ao=f.th-b.angle;const dx=b.position.x-f.cx,dy=b.position.y-f.cy;q.o={x:f.c*dx+f.s*dy,y:-f.s*dx+f.c*dy};}
+  if(A>0){Body.setVelocity(b,{x:vx/A,y:vy/A});Body.setAngularVelocity(b,w/A);}
+  setCat(b,CAT_FREE);Composite.add(G.engine.world,b);
+  for(const q of C)q.f=frame(q);
+  if(held)grab(b,held.x,held.y);}
+// 묶음 몸체를 조각마다 따로 나눔 (그중 하나가 쪼개지거나 사라지기 전에) → 남은 것끼리는 다음 프레임에 다시 묶임
+function unshare(b){const C=b.plugin.grp;if(!C)return;b.plugin.grp=null;
+  const held=G.drag&&G.drag.b===b?{x:b.position.x+G.drag.c.pointB.x,y:b.position.y+G.drag.c.pointB.y}:null;if(held)dropDrag();
+  if(G.ptr.pend===b)G.ptr.pend=null;
+  Matter.Composite.remove(G.engine.world,b);
+  for(const q of C)if(!q.dead&&q.body===b){q.f=frame(q);buildBody(q,q.f,b);}
+  if(held){const h=C.find(q=>{if(q.dead||q.body===b)return false;const L=toLocal(q,held.x,held.y);return solidAt(q,L.x,L.y);});if(h)grab(h.body,held.x,held.y);}
+  G.grpDirty=true;}
 // 이음매에 굳은 유리 방울
-function bead(p,lx,ly){const x=mkCtx(p),r=Math.max(2.2,p.cs*.5);x.save();ownCells(x,p);moltenPath(x,[[lx,ly-r*.3,r*1.5],[lx,ly+r*.3,r*1.8]],0,true);x.restore();p.dirty=true;}
-// 조각이 다시 만들어지면(쪼개짐) 붙은 자리·방울을 새 조각으로 옮김
+function bead(p,lx,ly){const x=mkCtx(p),r=Math.max(2.2,p.cs*.5);x.save();ownCells(x,p);moltenPath(x,[[lx,ly-r*.5,r*1.3],[lx,ly+r*.4,r*1.6]],0,0);x.restore();p.dirty=true;}
+// 조각이 다시 만들어지면(쪼개짐) 붙은 자리·방울·고드름을 새 조각으로 옮김
 function reglass(p,made){const live=made.filter(q=>!q.dead);
   const own=(lx,ly)=>live.find(q=>solidAt(q,lx,ly))||null;
   for(const L of G.fz){if(L.dead)continue;
-    if(L.a===p){const q=own(L.ax,L.ay);if(!q){L.dead=true;unweld(L);continue;}L.a=q;if(L.on)weld(L);}
-    if(L.b===p){const q=own(L.bx,L.by);if(!q){L.dead=true;unweld(L);continue;}L.b=q;if(L.on)weld(L);}}
-  for(const m of G.md)if(m.p===p){const q=own(m.lx,m.ly);if(q)m.p=q;else if(p.dead&&m.st<2){Object.assign(m,{p:null,st:2,vx:0,vy:0,tr:[],th:null});}}
-  if(G.fz.length>60)G.fz=G.fz.filter(L=>!L.dead);}
+    if(L.a===p){const q=own(L.ax,L.ay);if(!q){L.dead=true;unweld(L);continue;}L.a=q;if(L.on)q.fg=true;}
+    if(L.b===p){const q=own(L.bx,L.by);if(!q){L.dead=true;unweld(L);continue;}L.b=q;if(L.on)q.fg=true;}}
+  for(const m of G.md){if(m.p===p){const q=own(m.lx,m.ly);if(q)m.p=q;else if(p.dead&&m.st<2)Object.assign(m,{p:null,st:2,vx:0,vy:0,tr:[],th:null});}
+    if(m.th&&m.th.p===p){const q=own(m.th.lx,m.th.ly);if(q)m.th.p=q;else m.th=null;}}
+  G.ice=G.ice.filter(o=>{if(o.p!==p)return !o.p.dead;const q=own(o.lx,o.ly-1);if(q){o.p=q;return true;}return false;});
+  if(G.fz.length>60)G.fz=G.fz.filter(L=>!L.dead);G.grpDirty=true;}
 function unglass(p){for(const L of G.fz)if(!L.dead&&(L.a===p||L.b===p)){L.dead=true;unweld(L);}
-  for(const m of G.md)if(m.p===p){if(m.st<2)Object.assign(m,{p:null,st:2,vx:0,vy:0,tr:[],th:null});else m.p=null;}}
+  for(const m of G.md){if(m.p===p){if(m.st<2)Object.assign(m,{p:null,st:2,vx:0,vy:0,tr:[],th:null});else m.p=null;}if(m.th&&m.th.p===p)m.th=null;}
+  G.ice=G.ice.filter(o=>o.p!==p);}
 
 // ── 망치 ──
 function hammerSpawn(x,y){if(G.hm.length>=6)return;const side=x+HL+16>G.vw?-1:1;G.hm.push({x,y,side,t:0,hit:false,wh:false,ti:side>0?Math.PI:0});}
@@ -1021,8 +1147,7 @@ function hammerImpact(x,y){const k=PK();
   const S=str();let broke=false;
   if(hit){const p=hit.p;if(S>1.2&&(p.hst=(p.hst||0)+k/S)<.999)hammerChip(p,x,y,k);else{hammerBreak(p,x,y,k);broke=true;}
     sHammer("piece",clamp(.6+.25*k,.5,1.2));G.hit=Math.max(G.hit,.04+.025*Math.min(k,2));G.shake=Math.min(30,G.shake+4+4*k);}
-  else if(!water&&y>G.vh-26){dustP(x,G.vh-2,10,k);sHammer("floor",clamp(.6+.2*k,.5,1.1));G.shake=Math.min(30,G.shake+3+2*k);
-    G.dctx.globalAlpha=.18;G.dctx.drawImage(SPR.soot,x-14,G.vh-8,28,10);G.dctx.globalAlpha=1;}
+  else if(!water&&y>G.vh-26){dustP(x,G.vh-2,10,k);sHammer("floor",clamp(.6+.2*k,.5,1.1));G.shake=Math.min(30,G.shake+3+2*k);}
   // 충격이 옆 칸까지 퍼짐: 때린 곳 가까이 떠 있던 칸은 떨어져 나가며 바깥으로 밀려남 (파괴력이 클수록 멀리까지)
   if(hit&&!broke)return;
   const R=(14+18*k)/Math.sqrt(Math.max(1,S));
@@ -1133,7 +1258,6 @@ function casStep(dt){if(!G.cas.length)return;const g=1500*gfac(),wv=G.W.vol>1;
 function bulletHit(b){const x=b.x1,y=b.y1,dx=b.x1-b.x0,dy=b.y1-b.y0,n=Math.hypot(dx,dy)||1,ux=dx/n,uy=dy/n,k=PK();
   for(const B of G.bombs)if(Math.hypot(B.b.position.x-x,B.b.position.y-y)<14){B.t=G.time;return;}
   if(G.W.vol>1&&y>surfY(x)-2){const ys=surfY(x);splashUp(x,ys,2,260);for(let i=0;i<6;i++)bubble(x+rnd(-3,3),Math.max(y,ys+4)+rnd(0,40),rnd(1,2.5));sPlip(1);return;}
-  wallHole(x,y);   // 칸이 뚫리면 뒤 벽 구멍이 보임
   const hit=pieceAt(x,y);
   if(hit){gunHitPiece(hit.p,hit.L,x,y,ux,uy,k);return;}
   dustP(x,y,2,.55);if(Math.random()<.35)for(let i=0;i<3;i++){const a=rnd(0,6.28),s=rnd(150,420);spark(x,y,Math.cos(a)*s,Math.sin(a)*s-80,rnd(.06,.16));}
@@ -1185,11 +1309,6 @@ function bulletMark(p,lx,ly,k){const m=mat(),x=mkCtx(p),h=hoCtx(p),r=rnd(1.9,2.5
     for(let i=0,n=3+((Math.random()*3)|0);i<n;i++){const a=rnd(0,6.28),L=r*rnd(1.6,2.8);x.beginPath();x.moveTo(lx+Math.cos(a)*r,ly+Math.sin(a)*r);x.lineTo(lx+Math.cos(a+rnd(-.2,.2))*L,ly+Math.sin(a+rnd(-.2,.2))*L);x.stroke();}
     jagPath(h,lx,ly,r,10,.25);h.fill();}
   p.dirty=true;}
-// 뒤 벽(데칼)의 총알 구멍: 둘레 그늘 → 아래쪽 밝은 테(움푹 팬 자리) → 까만 구멍
-function wallHole(x,y){const c=G.dctx,dk=isDark(),r=rnd(1.6,2.2);
-  const g=c.createRadialGradient(x,y,r*.5,x,y,r*4);g.addColorStop(0,dk?"rgba(0,0,0,.5)":"rgba(60,55,50,.32)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.beginPath();c.arc(x,y,r*4,0,7);c.fill();
-  c.fillStyle=dk?"rgba(255,255,255,.07)":"rgba(255,255,255,.7)";c.beginPath();c.arc(x+.5,y+.6,r*1.25,0,7);c.fill();
-  c.fillStyle=dk?"#050505":"#1d1a17";jagPath(c,x,y,r,9,.3);c.fill();}
 function sGun(){const c=audio();if(!c)return;const t=c.currentTime,v=rnd(.92,1.08);
   burst(c,t,"highpass",1500*v,.6,.5,.045);burst(c,t,"lowpass",1200*v,.7,.55,.11);tone(c,t,"sine",170*v,44,.7,.12);burst(c,t+.003,"bandpass",4600,1.4,.1,.018);
   const n=noiseSrc(c),f=c.createBiquadFilter(),g=c.createGain();f.type="lowpass";f.frequency.setValueAtTime(1000,t);f.frequency.exponentialRampToValueAtTime(200,t+.38);
@@ -1253,6 +1372,247 @@ function drawGunFx(c){const g=G.gun;if(!g)return;
     c.restore();}}
 function drawCas(c){for(const q of G.cas){c.save();c.globalAlpha=Math.min(1,q.life/.6);c.translate(q.x,q.y);c.rotate(q.rot);c.drawImage(SPR.case,-4,-1.75,8,3.5);c.restore();}}
 
+// ── 바주카포 ──
+// 3D(bazooka3d.js)로 그림: 고르면 발사관이 올라오고, 누르면 3D에서 날아가 맞은 순간 여기서 부숨. 3D를 못 쓰면 아래 2D 그림으로
+let BZ3=null;
+function bzOn(){import("./bazooka3d.js").then(async m=>{BZ3=m;await m.bzReady();if(G&&G.tool==="bazooka"){m.bz.show(true);G.bz3d=true;const P=G.ptr;m.bz.aim(P.x>0?P.x:G.vw*.45,P.x>0?P.y:G.vh*.42);}}).catch(e=>{console.error(e);if(G)G.bz3d=false;});}
+function bzOff(){if(BZ3)BZ3.bz.show(false);if(G)G.bz3d=false;}
+function bz3dFire(x,y){BZ3.bz.aim(x,y);
+  BZ3.bz.fire(x,y,{colors:[...new Set(G.pieces.filter(p=>!p.dead).flatMap(p=>p.colors||[]))].slice(0,14),
+    launch:()=>{sBzFire();buzz([3,40,2]);if(!G)return;G.shake=Math.min(30,G.shake+9);G.flash=Math.min(.25,G.flash+.08);G.calm=0;},
+    ignite:()=>sRocketIgnite(),loop:v=>sLoopSet("rk",v,mkRocket),load:()=>sBzLoad(),
+    hit:(hx,hy)=>{if(!G)return;explode(hx,hy,1.75);G.hit=Math.max(G.hit,.06);G.shake=Math.min(36,G.shake+16);G.flash=Math.min(.45,G.flash+.15);G.calm=0;
+      for(let i=0;i<10;i++)smoke(hx+rnd(-30,30),hy+rnd(-20,10),rnd(-30,30),rnd(-120,-40),rnd(20,36),rnd(.4,.6));sBoom(1.5);setTimeout(()=>sBoom(.35),140);buzz([3,60,3,90,2,120,1]);}});}
+// 어깨에 멘 발사관(RPG-7 꼴: 녹색 관 · 나무 열가림막 · 손잡이 · 조준경, 앞에 원뿔 탄두)을 화면 오른쪽 아래에서 겨눔. 톡 누르면:
+// 관 속 발사 화약이 터져(총구 불꽃 · 연기, 등 뒤 후폭풍은 화면 오른쪽 아래에서 흙먼지·연기로 밀려 들어옴) 탄이 느리게 튀어 나감 →
+// 꼬리 날개가 펴지고 0.1초 뒤 로켓 모터 점화(번쩍) → 빠르게 가속하며 누른 곳(벽 쪽, 화면 속)으로 날아감.
+// 멀어질수록 작아지고, 날개 때문에 빙글 돌며 살짝 나선으로 흔들리고, 꼬리 불꽃 뒤로 흰 연기 줄이 남아 천천히 부풀며 흩어짐 → 누른 곳에서 크게 터짐(폭탄보다 셈)
+// 쏜 뒤엔 새 탄두를 끼우는 동안 못 쏨
+const BZ_RELOAD=1.2,RK_V0=430,RK_ACC=4300,RK_VMAX=2600,RK_Z=900,RK_K=2.3,RS_MAX=420;   // RK_Z: 벽까지 깊이(가상) · RK_K: 원근 세기
+function bzState(){return G.bz||(G.bz={a:-2.3,rc:0,vis:0,off:0,load:1,fl:0});}
+function bzGeo(){const s=clamp(Math.min(G.vw,G.vh)/320,1,1.7);return{s,px:G.vw+40*s,py:G.vh+46*s,L:268*s};}
+function bzPose(){const g=bzState(),o=bzGeo(),ux=Math.cos(g.a),uy=Math.sin(g.a),back=g.off+g.rc*26*o.s+(1-g.vis)*300*o.s;
+  return{o,ux,uy,mx:o.px+ux*(o.L-back),my:o.py+uy*(o.L-back),flip:ux<0?-1:1};}
+function bzStep(rdt){const g=bzState(),P=G.ptr,o=bzGeo(),on=G.tool==="bazooka";
+  g.vis+=((on?1:0)-g.vis)*Math.min(1,rdt*9);if(Math.abs(g.vis-(on?1:0))<.003)g.vis=on?1:0;
+  const tx=P.x>0?P.x:G.vw*.42,ty=P.x>0?P.y:G.vh*.45;
+  // 무거워서 총보다 천천히 따라옴 · 쏘면 크게 들렸다가 내려옴
+  let da=Math.atan2(ty-o.py,tx-o.px)-g.a-g.rc*.16;while(da>Math.PI)da-=6.283;while(da<-Math.PI)da+=6.283;g.a+=da*Math.min(1,rdt*11);
+  g.off+=(Math.max(0,o.L+70*o.s-Math.hypot(tx-o.px,ty-o.py))-g.off)*Math.min(1,rdt*12);
+  g.rc*=Math.exp(-rdt*5.5);g.fl-=rdt;
+  if(g.load<1){const was=g.load;g.load=Math.min(1,g.load+rdt/BZ_RELOAD);if(was<.55&&g.load>=.55)sBzSlide();if(g.load>=1)sBzLoad();}
+  rocketStep(rdt);rsStep(rdt);}
+// 로켓 연기 (밝은 회색 · 천천히 부풀고 위로 떠오르며 바람에 흩어짐)
+function rsmoke(x,y,vx,vy,r,gr,a,L){if(G.rs.length>=RS_MAX)G.rs.shift();G.rs.push({x,y,vx,vy,r,gr,a,life:L,max:L,sd:Math.random()*6.28});}
+function rsStep(dt){const A=G.rs;if(!A.length)return;const gf=gfac();
+  for(let i=A.length-1;i>=0;i--){const q=A[i];q.life-=dt;if(q.life<=0){A[i]=A[A.length-1];A.pop();continue;}
+    const k=Math.pow(.2,dt);q.vx=q.vx*k+Math.sin(G.time*.7+q.sd)*6*dt;q.vy=q.vy*k-14*gf*dt;q.x+=q.vx*dt;q.y+=q.vy*dt;q.r+=q.gr*dt*(q.life/q.max);}}
+function fireRocket(tx,ty){const g=bzState();if(g.load<1||g.vis<.75||G.stomp)return;
+  const q=bzPose(),s=q.o.s,x0=q.mx+q.ux*30*s,y0=q.my+q.uy*30*s,D=Math.max(40,Math.hypot(tx-x0,ty-y0)),DL=Math.hypot(D,RK_Z*s);
+  g.load=0;g.rc=1;g.fl=.09;G.calm=0;
+  G.rk.push({x0,y0,x:x0,y:y0,tx,ty,ux:(tx-x0)/D,uy:(ty-y0)/D,D,DL,d:0,v:RK_V0,t:0,ign:false,rot:Math.random()*6.28,sp:rnd(.8,1.2),wp:rnd(0,6.28),acc:0,sc:1,px:x0-(tx-x0)/D*124*s,py:y0-(ty-y0)/D*124*s});
+  // 총구: 발사 화약 불꽃 · 회색 연기 고리
+  for(let i=0;i<10;i++){const a=Math.atan2(q.uy,q.ux)+rnd(-1.2,1.2),v=rnd(40,260);rsmoke(x0+rnd(-6,6),y0+rnd(-6,6),Math.cos(a)*v,Math.sin(a)*v,rnd(8,15)*s,rnd(30,70),rnd(.28,.45),rnd(1.2,2.2));}
+  for(let i=0;i<12;i++){const a=Math.atan2(q.uy,q.ux)+rnd(-.5,.5),v=rnd(200,700);spark(x0,y0,Math.cos(a)*v,Math.sin(a)*v,rnd(.08,.2));}
+  // 후폭풍: 등 뒤로 뿜어진 불길이 화면 오른쪽 아래 구석에서 연기·흙먼지로 밀려 들어옴
+  for(let i=0;i<22;i++){const ex=G.vw+rnd(-20,30),ey=G.vh+rnd(-30,20),a=rnd(Math.PI*1.05,Math.PI*1.45),v=rnd(120,520);
+    rsmoke(ex,ey,Math.cos(a)*v,Math.sin(a)*v,rnd(26,60)*s,rnd(60,140),rnd(.3,.55),rnd(1.6,3));}
+  addP({t:"glint",x:G.vw-8,y:G.vh-8,s:180*s,life:.12,max:.12,w:1});
+  G.flash=Math.min(.3,G.flash+.12);G.shake=Math.min(30,G.shake+11);G.hit=Math.max(G.hit,.02);
+  sBzFire();buzz([3,40,2]);}
+function rocketStep(dt){const A=G.rk;if(!A.length){if(AU.rk)sLoopSet("rk",0,mkRocket);return;}let loud=0;
+  for(let i=A.length-1;i>=0;i--){const r=A[i];r.t+=dt;
+    if(!r.ign&&r.t>.1){r.ign=true;sRocketIgnite();
+      for(let k=0;k<8;k++){const a=Math.atan2(-r.uy,-r.ux)+rnd(-.6,.6),v=rnd(150,500);fire(r.x,r.y,Math.cos(a)*v,Math.sin(a)*v,rnd(6,11)*r.sc);}}
+    r.v=r.ign?Math.min(RK_VMAX,r.v+RK_ACC*dt):r.v*Math.pow(.6,dt);r.d+=r.v*dt;
+    // 화면 속(벽 쪽)으로 곧게 날아감: 실제로 간 비율 u → 원근으로 화면 위치 f(처음엔 빨리 지나가고 멀수록 천천히)와 크기 sc
+    const u=Math.min(1,r.d/r.DL),f=u*(1+RK_K)/(1+RK_K*u);r.sc=1/(1+RK_K*u);
+    // 날개 때문에 빙글 돌며(초당 몇 바퀴) 살짝 나선으로 흔들림 · 처음엔 아래로 조금 처졌다가 점화하면 바로잡힘
+    r.rot+=dt*(r.ign?26:8)*r.sp;const nx=-r.uy,ny=r.ux,wa=(4+5*u)*r.sc*Math.min(1,r.t*6);
+    if(!r.ign){r.dv=(r.dv||0)+300*dt;r.dy=(r.dy||0)+r.dv*dt;}else r.dy=(r.dy||0)*Math.pow(.015,dt);
+    const off=Math.sin(r.rot*.5+r.wp)*wa,ox=r.x,oy=r.y;
+    r.x=r.x0+r.ux*r.D*f+nx*off;r.y=r.y0+r.uy*r.D*f+ny*off+r.dy*(1-u);
+    // 꼬리 연기: 지나간 길을 따라 빈틈없이 (점화 전엔 옅게)
+    const kk=r.sc*bzGeo().s,tlx=r.x-r.ux*124*kk,tly=r.y-r.uy*124*kk,seg=Math.hypot(tlx-r.px,tly-r.py),stp=Math.max(2.5,6*r.sc);r.acc+=seg;
+    while(r.acc>=stp){r.acc-=stp;const f=seg>0?1-r.acc/seg:1,x=r.px+(tlx-r.px)*f,y=r.py+(tly-r.py)*f;
+      if(r.ign)rsmoke(x+rnd(-1.5,1.5),y+rnd(-1.5,1.5),-r.ux*rnd(10,40)+rnd(-18,18),-r.uy*rnd(10,40)+rnd(-18,18),(4.5+rnd(0,2.5))*kk,rnd(14,30)*(1.2-u*.5),rnd(.32,.5),rnd(1.6,2.8));
+      else if(Math.random()<.35)rsmoke(x,y,rnd(-10,10),rnd(-10,10),3*r.sc,12,.2,.8);}
+    r.px=tlx;r.py=tly;
+    if(r.ign&&Math.random()<.5)spark(tlx,tly,-r.ux*rnd(150,400)+rnd(-80,80),-r.uy*rnd(150,400)+rnd(-80,80),rnd(.06,.16));
+    loud=Math.max(loud,r.ign?.12*(1-u*.6):.03);
+    if(r.d>=r.DL){A.splice(i,1);rocketHit(r);}}
+  sLoopSet("rk",loud,mkRocket);}
+// 맞은 곳: 폭탄보다 큰 폭발 + 충격파 + 버섯처럼 피어오르는 검은 연기 · 흙먼지
+function rocketHit(r){const x=r.tx,y=r.ty,s=bzGeo().s;
+  explode(x,y,1.75);
+  for(let i=0;i<18;i++){const a=rnd(0,6.283),v=rnd(60,260);rsmoke(x+rnd(-10,10),y+rnd(-10,10),Math.cos(a)*v,Math.sin(a)*v-rnd(40,140),rnd(16,30)*s,rnd(50,110),rnd(.35,.6),rnd(2,3.6));}
+  for(let i=0;i<14;i++)smoke(x+rnd(-30,30),y+rnd(-20,10),rnd(-30,30),rnd(-120,-40),rnd(20,36),rnd(.5,.75));
+  addP({t:"ring",x,y,life:.5,max:.5,R:300*PK()});addP({t:"dring",x,y,life:.7,max:.7,R:260*PK()});
+  addP({t:"glint",x,y,s:200,life:.14,max:.14,w:1});
+  G.hit=Math.max(G.hit,.06);G.shake=Math.min(36,G.shake+16);G.flash=Math.min(.55,G.flash+.18);
+  sBoom(1.5);setTimeout(()=>sBoom(.35),140);buzz([3,60,3,90,2,120,1]);}
+// 발사관 (옆모습, 총구가 원점 · +x가 앞). 왼쪽을 겨누면 위아래를 뒤집어 조준경이 늘 위로
+function bzTubeGr(c,r,a,b,cc){const g=c.createLinearGradient(0,-r,0,r);g.addColorStop(0,a);g.addColorStop(.28,b);g.addColorStop(.62,cc);g.addColorStop(1,"#12140d");return g;}
+function warhead(c,dx,alpha,fins,rot){c.save();c.translate(dx,0);c.globalAlpha*=alpha;
+  // 꼬리(추진관) · 날개 · 탄두 몸통(배가 부른 원뿔) · 앞 신관
+  c.fillStyle=bzTubeGr(c,6,"#7d8466","#565c45","#363a2a");c.fillRect(-62,-6,64,12);
+  if(fins>0){const L=26*fins;for(let i=0;i<4;i++){const ph=rot+i*Math.PI/2,v=Math.sin(ph);if(Math.cos(ph)<-.2)continue;c.fillStyle=Math.cos(ph)>.4?"#6f7558":"#4a4f39";
+    c.beginPath();c.moveTo(-60,v*5);c.lineTo(-60+L*.15,v*(5+L*.8));c.lineTo(-38,v*(5+L*.5));c.lineTo(-38,v*5);c.closePath();c.fill();}}
+  c.fillStyle="#2b2e22";c.fillRect(-64,-7,4,14);
+  c.fillStyle=bzTubeGr(c,19,"#9aa07e","#6b7253","#454a35");
+  c.beginPath();c.moveTo(0,-8);c.bezierCurveTo(8,-18,22,-20,40,-19);c.lineTo(58,-17);c.bezierCurveTo(78,-14,96,-6,112,-2.6);c.lineTo(112,2.6);c.bezierCurveTo(96,6,78,14,58,17);c.lineTo(40,19);c.bezierCurveTo(22,20,8,18,0,8);c.closePath();c.fill();
+  c.fillStyle="rgba(0,0,0,.3)";c.fillRect(38,-19.2,3,38.4);c.fillRect(56,-17.4,2.2,34.8);
+  c.fillStyle="#c9b46a";c.fillRect(24,-19.4,6,38.8);   // 띠
+  c.fillStyle="rgba(255,255,255,.22)";c.beginPath();c.moveTo(6,-11);c.bezierCurveTo(16,-16,30,-17,56,-15);c.bezierCurveTo(78,-12,94,-6,108,-3);c.lineTo(106,-1.5);c.bezierCurveTo(88,-4,70,-9,50,-11.5);c.bezierCurveTo(30,-13,16,-12,6,-8);c.closePath();c.fill();
+  c.fillStyle="#3a3d33";c.beginPath();c.roundRect(110,-3.4,12,6.8,2);c.fill();c.fillStyle="#9a9c92";c.fillRect(120,-1.6,3.5,3.2);
+  c.restore();}
+function drawBazooka(c){const g=bzState();if(g.vis<.01||G.bz3d)return;const q=bzPose(),s=q.o.s;
+  c.save();c.translate(q.mx,q.my);c.rotate(g.a);c.scale(s,q.flip*s);
+  c.shadowColor="rgba(0,0,0,.38)";c.shadowBlur=16;c.shadowOffsetX=5;c.shadowOffsetY=10;
+  // 탄두: 끼워져 있으면 관 앞에 · 다시 끼우는 동안엔 앞에서 밀려 들어옴 (꼬리는 관 속)
+  if(g.load>=.55){const u=sst((g.load-.55)/.45);warhead(c,(1-u)*70,Math.min(1,u*2.5),0,0);}
+  // 관 (뒤쪽 깔때기는 화면 밖) · 총구 테
+  c.fillStyle=bzTubeGr(c,13,"#7a8163","#545a43","#3a3e2e");c.beginPath();c.roundRect(-520,-13,520,26,3);c.fill();
+  c.shadowColor="transparent";
+  c.fillStyle=bzTubeGr(c,15,"#5c614c","#3d4133","#26291f");c.beginPath();c.roundRect(-14,-15,16,30,3);c.fill();
+  c.fillStyle="#141610";c.beginPath();c.ellipse(1.5,0,3,11,0,0,7);c.fill();
+  // 나무 열가림막 (나뭇결 · 금속 띠)
+  const wg=c.createLinearGradient(0,-16,0,16);wg.addColorStop(0,"#b07a45");wg.addColorStop(.3,"#8a5a2e");wg.addColorStop(.75,"#5e3b1c");wg.addColorStop(1,"#2e1c0c");
+  c.fillStyle=wg;c.beginPath();c.roundRect(-322,-16,118,32,6);c.fill();
+  c.strokeStyle="rgba(40,22,8,.45)";c.lineWidth=.8;for(let i=0;i<7;i++){const y=-12+i*4;c.beginPath();c.moveTo(-318,y);c.bezierCurveTo(-290,y+rnd(-.3,.3)+1.2,-250,y-1.4,-208,y+.6);c.stroke();}
+  c.fillStyle="#2c2f27";c.fillRect(-326,-16.5,6,33);c.fillRect(-208,-16.5,6,33);
+  // 손잡이 · 방아쇠 · 앞 손잡이
+  c.fillStyle="#2a241c";c.beginPath();c.moveTo(-282,13);c.lineTo(-262,13);c.lineTo(-256,52);c.quadraticCurveTo(-262,58,-272,56);c.lineTo(-278,30);c.closePath();c.fill();
+  c.strokeStyle="#1b1d17";c.lineWidth=2.4;c.beginPath();c.moveTo(-262,14);c.quadraticCurveTo(-246,16,-244,30);c.quadraticCurveTo(-252,34,-258,32);c.stroke();
+  c.fillStyle="#111";c.fillRect(-256,15,3,10);
+  c.fillStyle="#2a241c";c.beginPath();c.moveTo(-196,13);c.lineTo(-180,13);c.lineTo(-178,44);c.quadraticCurveTo(-184,49,-192,46);c.closePath();c.fill();
+  // 조준경 (관 위 왼쪽) · 앞·뒤 가늠자
+  c.fillStyle=bzTubeGr(c,9,"#3f443a","#2a2d26","#171914");c.beginPath();c.roundRect(-300,-34,74,15,3);c.fill();
+  c.fillStyle="#22251e";c.fillRect(-290,-20,10,8);c.fillRect(-246,-20,10,8);c.beginPath();c.roundRect(-310,-35,14,17,3);c.fill();
+  c.fillStyle="#0a1418";c.fillRect(-226,-32,4,11);c.fillStyle="rgba(120,200,255,.5)";c.fillRect(-225,-30,1.6,4);
+  c.fillStyle="#2a2d26";c.fillRect(-62,-22,4,9);c.fillRect(-150,-19,8,6);
+  // 하이라이트 · 흠집
+  c.fillStyle="rgba(255,255,255,.14)";c.fillRect(-520,-10.5,516,2.2);c.fillRect(-300,-32,72,1.6);
+  c.fillStyle="rgba(0,0,0,.18)";for(const x of [-120,-96,-404,-440])c.fillRect(x,-13,1.2,26);
+  c.restore();}
+const sst=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+// 날아가는 탄: 앞으로 갈수록 작게 · 꼬리 날개가 돌아감
+function drawRockets(c){if(!G.rk.length)return;const s=bzGeo().s;
+  for(const r of G.rk){c.save();c.translate(r.x,r.y);c.rotate(Math.atan2(r.uy,r.ux));const k=s*r.sc;c.scale(k,k);
+    c.shadowColor="rgba(0,0,0,.3)";c.shadowBlur=8;c.shadowOffsetY=5;warhead(c,-60,1,Math.min(1,r.t/.07),r.rot);c.restore();}}
+// 빛: 총구 불꽃 · 로켓 꼬리 불길 (더하기 합성)
+function drawBzFx(c){const g=G.bz;
+  if(g&&g.fl>0&&g.vis>.5){const q=bzPose(),a=Math.min(1,g.fl/.09),s=q.o.s;
+    c.globalAlpha=.35*a;const R=220*s;c.drawImage(SPR.glow,q.mx-R,q.my-R,R*2,R*2);
+    c.save();c.translate(q.mx,q.my);c.rotate(g.a);c.scale(s,s);c.globalAlpha=a;c.drawImage(SPR.fCore,-10,-26,120,52);c.drawImage(SPR.fire,0,-34,90,68);c.restore();}
+  const s=bzGeo().s;
+  for(const r of G.rk){if(!r.ign)continue;const k=s*r.sc,fl=rnd(.85,1.15),tx=r.x-r.ux*124*k,ty=r.y-r.uy*124*k,ang=Math.atan2(r.uy,r.ux);
+    c.globalAlpha=.5;let R=70*k*fl;c.drawImage(SPR.glow,tx-R,ty-R,R*2,R*2);
+    c.save();c.translate(tx,ty);c.rotate(ang+Math.PI);c.scale(k,k);
+    c.globalAlpha=.85;c.drawImage(SPR.fTail,-6,-14*fl,92*fl,28*fl);c.globalAlpha=1;c.drawImage(SPR.fCore,-8,-8,54*fl,16);c.drawImage(SPR.fCore,-6,-4.5,30,9);c.restore();}
+  c.globalAlpha=1;}
+function drawRSmoke(c){const A=G.rs;if(!A.length)return;
+  for(const q of A){const k=q.life/q.max;c.globalAlpha=q.a*Math.min(1,k*1.4)*Math.min(1,(1-k)*8+.15);c.drawImage(SPR.rsm,q.x-q.r,q.y-q.r,q.r*2,q.r*2);}
+  c.globalAlpha=1;}
+// 소리: 쾅 + 쉭(관을 빠져나감) · 로켓 모터 으르렁 · 새 탄두 미는 소리 · 철컥
+function sBzFire(){const c=audio();if(!c)return;const t=c.currentTime;
+  tone(c,t,"sine",70,28,1,.6);burst(c,t,"lowpass",900,.7,.9,.5);burst(c,t,"highpass",2400,.6,.35,.12);
+  const n=noiseSrc(c),f=c.createBiquadFilter(),g=c.createGain();f.type="bandpass";f.Q.value=.9;f.frequency.setValueAtTime(600,t);f.frequency.exponentialRampToValueAtTime(3200,t+.35);
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.4,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+.6);n.connect(f);f.connect(g);g.connect(AU.master);n.start(t,Math.random());n.stop(t+.65);}
+function sRocketIgnite(){const c=AU.ctx;if(!c)return;const t=c.currentTime;burst(c,t,"bandpass",1500,.8,.35,.25);tone(c,t,"sawtooth",160,90,.06,.3);}
+const mkRocket=c=>{const L=nLoop(c,"bandpass",900,.8),o=c.createOscillator(),og=c.createGain();o.type="sawtooth";o.frequency.value=74;og.gain.value=.25;o.connect(og);og.connect(L.g);o.start();L.o=o;return L;};
+function sBzSlide(){const c=AU.ctx;if(!c)return;const t=c.currentTime;burst(c,t,"bandpass",1400,1.6,.1,.18);}
+function sBzLoad(){const c=AU.ctx;if(!c)return;const t=c.currentTime;burst(c,t,"bandpass",2600,3,.32,.04);tone(c,t,"sine",420,300,.08,.08);burst(c,t+.07,"bandpass",1800,3,.2,.04);}
+
+// ── 손바닥 필살기 (3D 손은 palm.js · 맞는 순간 여기서 부숨) ──
+// 손바닥 모양으로 눌린 자국(깊이 눌린 칸은 부서져 떨어짐) · 손 둘레 칸은 갈라지며 튀어 나감 · 금이 퍼짐 →
+// 오른손 패시브에 따라: 번개 = 갈래 번개가 사방으로 뻗으며 지나간 칸을 그을리고 떼어 냄 · 불 = 손 둘레에 불이 붙음 ·
+// 지옥 = 더 넓고 세게 타며(구멍이 남) 검붉은 불꽃과 검은 연기 · 물 = 손바닥 둘레로 큰 물보라가 쏟아져 화면에 물이 참
+// 손 윤곽: 오른손을 손등 쪽에서 본 모양 (엄지가 왼쪽) · 손바닥 너비 = 1, 손바닥 가운데가 원점, v는 손가락 쪽(위)
+const HAND_O=[[-.46,-.62],[-.5,-.18],[-.66,-.06],[-.84,.18],[-.9,.32],[-.82,.4],[-.68,.3],[-.52,.12],[-.5,.42],[-.48,.5],[-.44,1.12],[-.36,1.22],[-.27,1.16],[-.24,.56],[-.2,.58],[-.14,1.3],[-.05,1.38],[.04,1.3],[.06,.6],[.1,.58],[.16,1.2],[.25,1.27],[.32,1.18],[.3,.55],[.34,.5],[.42,.95],[.5,1],[.56,.92],[.5,.4],[.52,0],[.48,-.62]];
+const PASSIVE=["thunder","fire","hell","water"],PASSIVE_NM={thunder:"번개",fire:"불",hell:"지옥 (불의 상위 단계)",water:"물"};
+async function startPalmFx(){if(!G||G.stomp||G.palm||crushing)return;audio();
+  const el=(import.meta.env.DEV&&window.__palmEl)||PASSIVE[(Math.random()*4)|0];G.palm=true;dropDrag();sLaser(false);G.calm=0;buzz(1);const g0=G;
+  try{const {startPalm}=await import("./palm.js");
+    await startPalm({el,colors:[...new Set(G.pieces.filter(p=>!p.dead).flatMap(p=>p.colors||[]))].slice(0,14),sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onImpact:o=>{if(G===g0)palmImpact(o);},onEnd:()=>{if(G===g0){G.palm=false;G.calm=0;}}});
+  }catch(e){console.error(e);if(G)G.palm=false;}}
+function palmImpact(o){const k=PK(),m=mat(),{x:cx,y:cy,w,roll,el}=o,cr=Math.cos(roll),sr=Math.sin(roll);
+  const O=HAND_O.map(([u,v])=>[cx+(u*cr-v*sr)*w,cy-(u*sr+v*cr)*w]),hx=cx-sr*w*.35,hy=cy-cr*w*.35;
+  G.hit=Math.max(G.hit,.3);   // 3D 쪽과 같이 잠깐 거의 멈춤G.shake=Math.max(G.shake,30+6*Math.min(k,2));G.flash=Math.min(.5,G.flash+.2);G.calm=0;
+  const inF=(x,y)=>inPoly(O,x,y),dEdge=(x,y)=>{if(inF(x,y))return 0;let d=1e9;for(const q of O){const e=Math.hypot(q[0]-x,q[1]-y);if(e<d)d=e;}return d;};
+  const RB=w*(.42+.1*Math.min(k,2.5))*Math.pow(Math.max(1,str()),-.22);
+  const S={cx:hx,cy:hy,ci:0,rev:0,pinned:[],cracks:makeCracks(O,hx,hy,w*1.8,clamp(.8+.3*k,.8,1.7),m==="glass"?"glass":m==="wood"?"grain":"jag",G.pieces.filter(p=>!p.dead&&p.gr).length*2>G.pieces.filter(p=>!p.dead).length?Math.PI/2:0).sort((a,b)=>a.d-b.d)};
+  for(const B of G.bombs)if(dEdge(B.b.position.x,B.b.position.y)<RB)B.t=Math.min(B.t,G.time+rnd(.05,.25));
+  const launch=[],cols=[];
+  for(const p of G.pieces.slice()){if(p.dead)continue;
+    if(p.pin){const l=p.f.cx-p.W/2,tp=p.f.cy-p.H/2;let n=0;for(let a=0;a<5;a++)for(let b=0;b<5;b++)if(inF(l+(a+.5)*p.W/5,tp+(b+.5)*p.H/5))n++;
+      if(n){palmStamp(p,O);S.pinned.push(p);cols.push(...p.colors);if(n>=7)crushUnder(p,inF,k);continue;}
+      const d=dEdge(p.f.cx,p.f.cy);if(d<RB||(d<RB*2.4&&Math.random()<.8*(1-(d-RB)/(RB*1.4))))launch.push([p,d]);else S.pinned.push(p);}
+    else{const d=dEdge(p.f.cx,p.f.cy);if(d<RB*1.6)launch.push([p,d]);}}
+  for(const [p,d] of launch)if(!p.dead)stompLaunch(p,S,d,RB,k);
+  G.pcr=S;
+  // 손 둘레로 밀려 나오는 먼지 · 부스러기 · 충격파
+  const N=O.length,pal=matPal()||cols.concat(["#8f877c","#6f675e"]);
+  for(let i=0;i<90;i++){const [px,py]=O[(Math.random()*N)|0];let dx=px-hx,dy=py-hy;const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;const sp=rnd(140,600)*Math.sqrt(k);
+    const L=rnd(1.2,2.2);addP({t:"dust",x:px,y:py,vx:dx*sp,vy:dy*sp*.8,r:rnd(9,20),gr:rnd(30,70),a:rnd(.3,.55),life:L,max:L});}
+  for(let i=0;i<130;i++){const [px,py]=O[(Math.random()*N)|0];let dx=px-hx,dy=py-hy;const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;const sp=rnd(150,760)*Math.sqrt(k);
+    shard(px,py,dx*sp,dy*sp*.7-rnd(80,420),pal[(Math.random()*pal.length)|0],rnd(2,6));}
+  addP({t:"dring",x:hx,y:hy,life:.6,max:.6,R:w*1.6});
+  const inR=(R,f)=>{for(const p of G.pieces){if(p.dead)continue;const bb=p.body.bounds;if(bb.max.x<hx-R||bb.min.x>hx+R||bb.max.y<hy-R*1.2||bb.min.y>hy+R*1.2)continue;f(p);}};
+  const spot=(p,R)=>{const a=rnd(0,6.283),r=Math.sqrt(Math.random())*R,L=toLocal(p,hx+Math.cos(a)*r,hy+Math.sin(a)*r*1.2);return L.x<0||L.y<0||L.x>p.W||L.y>p.H?null:L;};
+  if(el==="fire"||el==="hell"){const hell=el==="hell",R=w*(hell?.75:.55);
+    // 손바닥이 닿은 자리 둘레에서 몇 군데 불이 붙어 번짐 (지옥은 더 넓고 많이 · 더 세게)
+    inR(R,p=>{for(let i=0;i<(hell?4:3);i++){const L=spot(p,R);if(!L)continue;igniteAt(p,L.x,L.y,p.cs*(hell?4:3.4),1);
+      if(hell)hurt(p,L.x,L.y,p.cs*2.4,dist=>.55*POW*(1-dist/(p.cs*2.4)),1.6,(wx,wy)=>{if(Math.random()<.3)ember(wx,wy,rnd(-80,80),rnd(-160,-20));});}});
+    for(let i=0;i<(hell?120:80);i++){const [px,py]=O[(Math.random()*N)|0];let dx=px-hx,dy=py-hy;const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;const sp=rnd(60,380);
+      fire(px+rnd(-8,8),py+rnd(-8,8),dx*sp,dy*sp-rnd(40,160),rnd(10,24)*(hell?1.25:1));if(Math.random()<.3)ember(px,py,dx*sp*1.4,dy*sp-200);}
+    if(hell){for(let i=0;i<36;i++)smoke(hx+rnd(-w*.6,w*.6),hy+rnd(-w*.5,w*.7),rnd(-30,30),rnd(-110,-30),rnd(22,40),rnd(.55,.85));
+      for(let i=0;i<10;i++)addP({t:"glint",x:hx+rnd(-w*.5,w*.5),y:hy+rnd(-w*.5,w*.7),s:rnd(60,120),life:.5,max:.5,w:1,red:1});}
+    sBoom(hell?1.3:1);}
+  else if(el==="thunder"){G.zap={x:hx,y:hy,w,left:.45};for(let i=0;i<9;i++){const a=rnd(0,6.283);zapBolt(hx,hy,a,w*rnd(.9,1.9));}sThunder();}
+  else{const R=w*1.15;inR(R,p=>{for(let i=0;i<8;i++){const L=spot(p,R);if(L)wetAt(p,L.x,L.y,p.cs*3);}});
+    for(let i=0;i<420;i++){const [px,py]=O[(Math.random()*N)|0];let dx=px-hx,dy=py-hy;const n=Math.hypot(dx,dy)||1;dx/=n;dy/=n;const sp=rnd(250,1150);
+      spawnDrop(px+rnd(-6,6),py+rnd(-6,6),dx*sp,dy*sp*.8-rnd(100,520));}
+    sSplash(1);sSplash(1);}
+  sStomp();}
+// 손바닥에 눌린 자국 (붙어 있는 칸: 칸 좌표 = 화면 좌표 - 왼쪽 위)
+function palmStamp(p,O){const x=mkCtx(p),l=p.f.cx-p.W/2,t=p.f.cy-p.H/2,dk=isDark();
+  x.save();ownCells(x,p);x.translate(-l,-t);x.beginPath();O.forEach(([a,b],i)=>i?x.lineTo(a,b):x.moveTo(a,b));x.closePath();
+  x.fillStyle=dk?"rgba(0,0,0,.24)":"rgba(70,55,45,.11)";x.fill();x.lineJoin="round";
+  x.lineWidth=4;x.strokeStyle=dk?"rgba(0,0,0,.4)":"rgba(60,45,35,.22)";x.stroke();
+  x.lineWidth=1.2;x.strokeStyle=dk?"rgba(255,255,255,.08)":"rgba(255,255,255,.55)";x.translate(1.5,2);x.stroke();
+  x.restore();p.dirty=true;}
+// 깊이 눌린 칸: 구멍 대신 짓눌려 쩍쩍 갈라진 금 (가장자리에서 안쪽으로 몇 갈래)
+function crushUnder(p,inF,k){const x=mkCtx(p),m=mat(),l=p.f.cx-p.W/2,t=p.f.cy-p.H/2;x.save();ownCells(x,p);
+  for(let i=0,n=Math.random()<.55?1:0;i<n;i++){let px=rnd(0,p.W),py=rnd(0,p.H);if(!inF(l+px,t+py))continue;let a=rnd(0,6.283);
+    for(let s=0,L=Math.hypot(p.W,p.H)*rnd(.2,.4);s<L;s+=4){a+=rnd(-.35,.35);const nx=px+Math.cos(a)*4,ny=py+Math.sin(a)*4;crackSeg(x,px,py,nx,ny,Math.max(.6,1.8*(1-s/L)),m);px=nx;py=ny;}}
+  x.restore();p.dirty=true;}
+// 번개: 갈래를 치며 뻗어 나가고, 지나간 칸은 그을리고 조금 부서지며 떨어져 나감 · 종이·나무엔 불씨
+function zapBolt(x0,y0,a,L){const n=14,pts=[[x0,y0]],nx=-Math.sin(a),ny=Math.cos(a);let off=0;
+  for(let i=1;i<=n;i++){const u=i/n;off=off*.5+rnd(-1,1)*L*.09;pts.push([x0+Math.cos(a)*L*u+nx*off,y0+Math.sin(a)*L*u+ny*off]);}
+  G.bolts.push({pts,w:2.4,life:.32,max:.32});
+  for(let k=0;k<2;k++)if(Math.random()<.7){const j=3+((Math.random()*(n-5))|0),[bx,by]=pts[j],b=a+rnd(-.9,.9),bl=L*rnd(.25,.45),bp=[[bx,by]];for(let i=1;i<=6;i++)bp.push([bx+Math.cos(b)*bl*i/6+rnd(-1,1)*bl*.08,by+Math.sin(b)*bl*i/6+rnd(-1,1)*bl*.08]);G.bolts.push({pts:bp,w:1.4,life:.3,max:.3});}
+  const hitP=new Set();
+  for(let i=1;i<pts.length;i++){const [ax,ay]=pts[i-1],[bx,by]=pts[i],h=pieceAt((ax+bx)/2,(ay+by)/2);if(!h)continue;const p=h.p,A=toLocal(p,ax,ay),B=toLocal(p,bx,by),x=mkCtx(p),dk=isDark();
+    x.save();ownCells(x,p);x.lineCap="round";x.strokeStyle=dk?"rgba(0,0,0,.6)":"rgba(30,22,16,.5)";x.lineWidth=3.2;x.beginPath();x.moveTo(A.x,A.y);x.lineTo(B.x,B.y);x.stroke();
+    x.strokeStyle=dk?"rgba(160,200,255,.25)":"rgba(255,255,255,.5)";x.lineWidth=.9;x.stroke();x.restore();p.dirty=true;
+    hurt(p,B.x,B.y,p.cs*1.3,dist=>.4*POW*(1-dist/(p.cs*1.3)),1,null);if(burns()&&i===pts.length-1&&Math.random()<.3)igniteAt(p,B.x,B.y,p.cs*1.5,.35);
+    if(Math.random()<.5)spark(bx,by,rnd(-300,300),rnd(-300,100),rnd(.1,.3));hitP.add(p);}
+  for(const p of hitP)if(p.pin&&Math.random()<.45){release(p);const b=p.body;Matter.Body.setVelocity(b,{x:b.velocity.x+rnd(-3,3),y:b.velocity.y-rnd(1,4)});}}
+function zapStep(dt){if(G.bolts.length)for(let i=G.bolts.length-1;i>=0;i--){const B=G.bolts[i];B.life-=dt;if(B.life<=0)G.bolts.splice(i,1);}
+  const Z=G.zap;if(!Z)return;Z.left-=dt;if(Math.random()<dt*22)zapBolt(Z.x+rnd(-Z.w*.2,Z.w*.2),Z.y+rnd(-Z.w*.2,Z.w*.3),rnd(0,6.283),Z.w*rnd(.7,1.6));
+  if(Math.random()<dt*8)G.flash=Math.min(.35,G.flash+.08);if(Z.left<=0)G.zap=null;}
+// 번개 그리기: 밝은 화면에서도 보이게 짙은 파란 바탕선 → (더하기 합성으로) 푸른 빛 · 흰 속
+function boltPath(c,B){c.beginPath();B.pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));}
+function drawBoltsInk(c){if(!G.bolts.length)return;c.lineCap=c.lineJoin="round";
+  for(const B of G.bolts){const a=Math.min(1,B.life/B.max*1.8);c.globalAlpha=.55*a;c.strokeStyle="#1b3f9a";c.lineWidth=B.w*2.6;boltPath(c,B);c.stroke();}c.globalAlpha=1;}
+function drawBoltsGlow(c){if(!G.bolts.length)return;c.lineCap=c.lineJoin="round";
+  for(const B of G.bolts){const a=Math.min(1,B.life/B.max*1.8)*(Math.random()<.15?.4:1);
+    c.globalAlpha=.45*a;c.strokeStyle="rgb(120,180,255)";c.lineWidth=B.w*5;boltPath(c,B);c.stroke();
+    c.globalAlpha=a;c.strokeStyle="rgb(245,250,255)";c.lineWidth=B.w;boltPath(c,B);c.stroke();}c.globalAlpha=1;}
+function sThunder(){const c=AU.ctx;if(!c)return;const t=c.currentTime;burst(c,t,"highpass",5000,.7,.6,.25);burst(c,t,"lowpass",1200,.7,.8,.9);tone(c,t,"sine",70,30,.7,1);
+  [.3,.7,1.2].forEach((d,i)=>burst(c,t+d,"lowpass",600-i*120,.7,.4/(1+i),.9));}
+
 // ── 거대한 발 ──
 // 누르면: 하늘이 어두워지며 흐린 그림자가 점점 진하고 또렷해짐 → 워커가 위에서 확 내려와 쾅 (멈칫 · 흔들림) →
 // 밟힌 칸은 자국이 찍힌 채 눌려 있고, 둘레 칸은 갈라지며 튀어 나감. 금은 남아 있는 칸을 타고 퍼짐(바탕엔 안 남김) → 발이 들려 올라감
@@ -1263,7 +1623,7 @@ function stompArt(){const Ls=stompLs(),dk=isDark(),key=Math.round(Ls)+"|"+dk+"|"
   const boot=bootSprite(Math.round(Ls*Math.min(1.5,G.fdpr)),(G.vh*1.2)/Ls);
   ART={key,boot,sh:shadowSprites(boot),pr:printSprite(Math.round(Ls*Math.min(2,G.pdpr)),dk)};return ART;}
 function stompH(t){if(t<ST_HIT){const u=t/ST_HIT;return 1-u*u*u;}if(t<ST_LIFT)return 0;const u=(t-ST_LIFT)/(ST_END-ST_LIFT);return u*u*1.6;}
-function startStomp(){if(!G||G.stomp||crushing)return;audio();
+function startStomp(){if(!G||G.stomp||G.palm||crushing)return;audio();
   const A=stompArt(),Ls=stompLs(),side=(G.stompN=(G.stompN||0)+1)%2?1:-1,Hs=G.vh-G.top;   // 오른발 · 왼발 번갈아
   G.stomp={t:0,cx:G.vw*rnd(.4,.6),cy:G.top+Hs*rnd(.47,.56),ang:rnd(-.18,.18),mir:side,Ls,A,hit:false,lift:false,cracks:null,ci:0,rev:0,pinned:[]};
   dropDrag();sLaser(false);G.calm=0;sStompIn();buzz([1,250,1,250,1,200,2]);}
@@ -1303,7 +1663,7 @@ function ownCells(x,p){x.beginPath();for(const r of rectsOf(p))x.rect(r.x,r.y,r.
 function stampPiece(p,S){const x=mkCtx(p),pr=S.A.pr,l=p.f.cx-p.W/2,t=p.f.cy-p.H/2;
   x.save();ownCells(x,p);x.translate(S.cx-l,S.cy-t);x.rotate(S.ang);x.scale(S.mir*S.Ls/pr.U,S.Ls/pr.U);x.drawImage(pr.cv,-pr.ox,-pr.oy);x.restore();p.dirty=true;}
 // 튀어 나가는 칸: 지나가는 금을 그려 넣고 그 금을 따라 쪼갠 뒤 발에서 멀어지는 쪽 + 위로 날림
-function stompLaunch(p,S,d,RB,k){release(p);const {cs,cols,rows}=p;let cut=false,x=null;
+function stompLaunch(p,S,d,RB,k){for(const L of G.fz)if(!L.dead&&(L.a===p||L.b===p)){L.dead=true;unweld(L);}release(p);const {cs,cols,rows}=p;let cut=false,x=null;
   for(const sg of S.cracks){const a=toLocal(p,sg.x0,sg.y0),b=toLocal(p,sg.x1,sg.y1);
     if((a.x<0&&b.x<0)||(a.y<0&&b.y<0)||(a.x>p.W&&b.x>p.W)||(a.y>p.H&&b.y>p.H))continue;
     if(!x){x=mkCtx(p);x.save();ownCells(x,p);}
@@ -1429,7 +1789,7 @@ function drawWater(c){const W=G.W,D=G.dr,has=W.vol>1;if(!has&&!D.length&&!G.bub.
 // 움직이는 것도, 타거나 젖은 것도, 효과도 없으면 조용한 상태
 function calm(){
   if(G.ptr.down||G.bombs.length||G.hm.length||G.ps.length||G.fl.length||G.fb.length||G.dr.length||G.bub.length||G.splashQ.length)return false;
-  if(G.stomp||G.bul.length||G.cas.length||G.md.length||G.gp.some(q=>q.T>.02)||(G.gun&&(G.gun.fl>0||G.gun.rc>.01||G.gun.vis!==(G.tool==="gun"?1:0))))return false;
+  if(G.stomp||G.palm||G.pcr||G.zap||G.bolts.length||G.grpDirty||G.rk.length||G.rs.length||(G.bz&&(G.bz.load<1||G.bz.rc>.01||G.bz.fl>0||G.bz.vis!==(G.tool==="bazooka"?1:0)))||G.bul.length||G.cas.length||G.md.length||G.gp.some(q=>q.T>.02)||(G.gun&&(G.gun.fl>0||G.gun.rc>.01||G.gun.vis!==(G.tool==="gun"?1:0))))return false;
   if(G.W.vol>0||G.W.drain||G.flash>.005||G.shake||G.hit>0||G.wallAll||G.wallQ.size||G.wallCl.length||G.engine.gravity.y!==(G.zg?0:1.15))return false;
   for(const p of G.pieces){if(p.dead)continue;if(p.burning||p.hot||p.wet||p.dirty||p.needMask||p.shapeDirty)return false;
     if(!p.pin&&(p.body.speed>.06||p.body.angularSpeed>.004))return false;}
@@ -1443,6 +1803,7 @@ function loop(ts){
   let dt=rdt;if(G.hit>0){G.hit-=rdt;dt=rdt*.07;}   // 망치 타격 순간 잠깐 멈칫
   G.time+=dt;
   const gt=G.zg?0:1.15,gy=G.engine.gravity.y;if(gy!==gt){let ny=gy+(gt-gy)*Math.min(1,rdt*3.2);if(Math.abs(ny-gt)<.004)ny=gt;G.engine.gravity.y=ny;}
+  if(G.grpDirty)regroup();
   G.acc+=dt;let n=0;while(G.acc>=1/60&&n<4){Engine.update(G.engine,1000/60);G.acc-=1/60;n++;}if(n>=4)G.acc=0;
   if(G.landV>3.2&&G.time-G.landT>.05){sLand(G.landV);G.landT=G.time;}G.landV=0;
   for(const p of G.pieces)if(!p.dead)p.f=frame(p);
@@ -1451,7 +1812,9 @@ function loop(ts){
   toolStep(rdt);
   hammerStep(dt);
   gunStep(rdt);
+  bzStep(rdt);
   stompStep(dt);
+  zapStep(dt);if(G.pcr){G.pcr.rev+=dt*1700;revealCracks(G.pcr);if(!G.pcr.cracks)G.pcr=null;}
   if(G.tool==="laser"&&G.ptr.down)laserStep(dt);else G.laserHit=false;
   for(const B of G.bombs.slice()){if(G.time>=B.t){Matter.Composite.remove(G.engine.world,B.b);G.bombs.splice(G.bombs.indexOf(B),1);
     if(G.drag&&G.drag.b===B.b)dropDrag();explode(B.b.position.x,B.b.position.y);}}
@@ -1526,6 +1889,7 @@ function setTool(t,quiet){TOOL=t;
   document.querySelectorAll(".gbar [data-tool]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tool===t?"true":"false"));
   if(!quiet)showHint(hintFor(t));
   if(!G)return;G.tool=t;G.calm=0;document.documentElement.dataset.gtool=t;
+  if(t==="bazooka")bzOn();else bzOff();
   dropDrag();sLaser(false);if(G.ptr.down&&t==="laser")sLaser(true);
   const P=G.ptr;P.lx=P.x;P.ly=P.y;P.hold=t==="water"?3:.08;P.dacc=12;}
 // 도구를 바꾸면 사용법이 잠깐 떴다가 사라짐
@@ -1572,7 +1936,7 @@ export function startSmash(opt){
      wallCv,wallX:wallCv.getContext("2d"),freeCv,freeX:freeCv.getContext("2d"),wallAll:true,wallQ:new Set(),wallCl:[],freeAny:false,shT:"",
      fl:[],fb:[],dr:[],hm:[],bub:[],glows:[],splashQ:[],pg:new Map(),hash:new Map(),todo:[],sparkB:[[],[],[],[]],shB:new Map(),nSmoke:0,nSteam:0,nShard:0,zg:false,grav:false,hit:0,top:opt.top||0,calm:0,
      wetT:0,ctT:0,fireT:0,fireTot:0,absorbed:0,pourLv:0,uiT:0,wcv:document.createElement("canvas"),wctx:null,W:null,caus:null,
-     bul:[],cas:[],gun:null,stomp:null,landV:0,landT:0,md:[],gp:[],fz:[]};
+     bul:[],cas:[],gun:null,bz:null,bz3d:false,rk:[],rs:[],bolts:[],zap:null,pcr:null,palm:false,stomp:null,landV:0,landT:0,md:[],gp:[],fz:[],ice:[],grpDirty:false};
   sizeCanvases();
   try{G.caus=G.fctx.createPattern(SPR.caus,"repeat");}catch(e){G.caus=null;}
   const T=500;
@@ -1598,28 +1962,30 @@ export function startSmash(opt){
     // 부딪히는 소리는 한 프레임에 가장 센 것 하나만 (loop에서 냄)
     if(!(a.isStatic&&b.isStatic)){const v=Math.hypot(a.velocity.x-b.velocity.x,a.velocity.y-b.velocity.y);if(v>G.landV)G.landV=v;}
     const [st,mv]=a.isStatic&&!b.isStatic?[a,b]:b.isStatic&&!a.isStatic?[b,a]:[];if(!st)continue;
-    const q=st.plugin.piece;if(!q||!q.pin)continue;
+    const q=st.plugin.piece;if(!q||!(q.pin||q.anc))continue;
     if(Math.hypot(mv.velocity.x,mv.velocity.y)>KNOCK*Math.sqrt(Math.max(1,str()))||(G.drag&&G.drag.b===mv))release(q);}});
   const inUI=e=>e.target&&e.target.closest&&e.target.closest("#chrome,#sheet,#gate");
   const down=e=>{if(inUI(e))return;const P=G.ptr;if(P.down)return;e.preventDefault();audio();
-    if(G.stomp)return;   // 발이 내려오는 동안은 잠깐 손 못 댐
+    if(G.stomp||G.palm)return;   // 발이 내려오거나 손바닥 필살기 동안은 잠깐 손 못 댐
     P.x=e.clientX;P.y=e.clientY;P.sx=P.x;P.sy=P.y;P.down=true;P.id=e.pointerId;P.moved=false;P.tap=null;P.pend=null;
     // 붙어 있는 칸(이나 폭탄)은 끌기 시작할 때 떼어냄 → 톡 누르기만 하면 그대로 두고 일정을 염
     if(G.tool==="grab"){const b=pick(P.x,P.y);if(b){P.tap=b.plugin.piece||null;if(b.isStatic)P.pend=b;else grab(b,P.x,P.y);}}
     else if(G.tool==="laser")sLaser(true);
     else if(G.tool==="bomb")spawnBomb(P.x,P.y);
     else if(G.tool==="hammer")hammerSpawn(P.x,P.y);
+    else if(G.tool==="bazooka"){if(G.bz3d&&BZ3)bz3dFire(P.x,P.y);else fireRocket(P.x,P.y);}
     else if(G.tool==="gun"){const g=gunState();if(performance.now()-g.last>1000/GUN_RATE)g.cd=0;}
     else{P.lx=P.x;P.ly=P.y;P.pvx=0;P.pvy=0;P.dacc=12;P.hold=G.tool==="water"?3:.08;}};
   const move=e=>{const P=G.ptr;if(P.down&&e.pointerId!==P.id)return;P.x=e.clientX;P.y=e.clientY;G.calm=0;
     if(P.down&&Math.hypot(P.x-P.sx,P.y-P.sy)>6)P.moved=true;
     if(P.pend&&P.moved){const b=P.pend;P.pend=null;if(b.plugin.piece)release(b.plugin.piece);else unstick(b);grab(b,P.sx,P.sy);}
-    if(G.drag){G.drag.c.pointA.x=P.x;G.drag.c.pointA.y=P.y;}};
+    if(G.drag){G.drag.c.pointA.x=P.x;G.drag.c.pointA.y=P.y;}
+    if(G.bz3d&&BZ3)BZ3.bz.aim(P.x,P.y);};
   const up=e=>{const P=G.ptr;if(!P.down||e.pointerId!==P.id)return;P.down=false;P.id=null;P.pend=null;dropDrag();sLaser(false);
     if(G.tool==="grab"&&!P.moved&&P.tap&&!P.tap.dead&&OPT.onTap)OPT.onTap(P.tap.orig);};
   const block=e=>{if(inUI(e))return;e.preventDefault();e.stopPropagation();};
-  const KT={"1":"grab","2":"laser","3":"bomb","4":"hammer","5":"fire","6":"water","7":"gun"};
-  const key=e=>{if(KT[e.key])setTool(KT[e.key]);else if(e.key==="g"||e.key==="G")toggleGrav();else if(e.key==="f"||e.key==="F")startStomp();else if(e.key==="Escape"&&OPT.onReset)OPT.onReset();};
+  const KT={"1":"grab","2":"laser","3":"bomb","4":"hammer","5":"fire","6":"water","7":"gun","8":"bazooka"};
+  const key=e=>{if(KT[e.key])setTool(KT[e.key]);else if(e.key==="g"||e.key==="G")toggleGrav();else if(e.key==="f"||e.key==="F")startStomp();else if(e.key==="p"||e.key==="P")startPalmFx();else if(e.key==="Escape"&&OPT.onReset)OPT.onReset();};
   const ctx=e=>{if(!inUI(e))e.preventDefault();};
   addEventListener("pointerdown",down,{capture:true,passive:false});addEventListener("pointermove",move);addEventListener("pointerup",up);addEventListener("pointercancel",up);
   addEventListener("click",block,true);addEventListener("keydown",key);addEventListener("contextmenu",ctx);
@@ -1632,12 +1998,13 @@ let preT=0;
 // 3D 장면(영역전개 마무리)이 아직 화면에 있으면 끝난 뒤로 미룸
 function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>{if(!G)return;if(document.getElementById("gCrush")){schedulePrewarm();return;}const pcs=G.pieces.filter(p=>!p.dead).map(p=>({W:p.W,H:p.H}));
   import("./crush.js").then(m=>m.prewarm(pcs)).catch(()=>{});
+  setTimeout(()=>{if(G&&!G.palm)import("./palm.js").then(m=>m.prewarmPalm()).catch(()=>{});},1200);
   // 거대한 발 그림도 미리 (다음 한가할 때)
   const art=()=>{if(G&&!G.stomp)try{stompArt();}catch(e){console.error(e);}};window.requestIdleCallback?requestIdleCallback(art,{timeout:5000}):setTimeout(art,500);};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
 // fade: 불·연기·그을음 캔버스를 바로 지우지 않고 서서히 사라지게 (짓누르기로 넘어갈 때)
 export function stopSmash(fade){
-  if(!G)return;cancelAnimationFrame(G.raf);sStopAll();G.off();
+  if(!G)return;if(BZ3)BZ3.bz.hide();G.bz3d=false;cancelAnimationFrame(G.raf);sStopAll();G.off();
   Matter.Composite.clear(G.engine.world,false);Matter.Engine.clear(G.engine);
   G.wallCv.remove();G.freeCv.remove();
   for(const el of [G.fx,G.decal]){if(!fade){el.remove();continue;}el.style.transition="opacity .5s";el.style.opacity="0";setTimeout(()=>el.remove(),600);}
@@ -1671,7 +2038,7 @@ function hintFor(t){const S=str(),nm=MATS.find(q=>q.id===mat()).name;
 if(import.meta.env.DEV)window.__smash=()=>G;   // 개발 중 성능 측정용
 // ── 손으로 짓누르기: 지금 화면의 조각(그림·위치·각도)을 3D 장면에 넘기고 2D 부수기는 멈춤 ──
 let crushing=false;
-async function beginCrush(){if(!G||crushing||G.stomp)return;crushing=true;audio();
+async function beginCrush(){if(!G||crushing||nuking||G.stomp||G.palm)return;crushing=true;audio();
   // 3D를 준비하는 동안 2D는 그 자리에 멈춰 둠 (조각 위치가 3D 첫 화면과 똑같도록) · 도구 막대는 바로 사라짐
   cancelAnimationFrame(G.raf);G.paused=true;sStopAll();document.documentElement.classList.add("crush-on");
   const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
@@ -1681,7 +2048,19 @@ async function beginCrush(){if(!G||crushing||G.stomp)return;crushing=true;audio(
     stopSmash(true);   // 3D가 첫 화면을 그린 뒤에 2D를 지워서 끊김이 없게
   }catch(e){console.error(e);crushing=false;document.documentElement.classList.remove("crush-on");if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
 document.getElementById("gCrushBtn").onclick=beginCrush;
+// 핵: 짓누르기처럼 지금 화면의 조각을 3D로 넘기고 2D는 멈춤 · 끝나면 달력을 새로
+let nuking=false;
+async function beginNuke(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuking=true;audio();
+  cancelAnimationFrame(G.raf);G.paused=true;sStopAll();if(BZ3)BZ3.bz.hide();
+  const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
+  const onReset=OPT&&OPT.onReset;
+  try{const {startNuke}=await import("./nuke.js");
+    await startNuke({pieces,sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onDone:()=>{nuking=false;onReset&&onReset();}});
+    stopSmash(true);
+  }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
+document.getElementById("gNukeBtn").onclick=beginNuke;
 document.getElementById("gStompBtn").onclick=()=>startStomp();
+document.getElementById("gPalmBtn").onclick=()=>startPalmFx();
 // 재질 고르기: 바꾸면 달력을 새 재질로 다시 그림
 (()=>{const btn=document.getElementById("gMat"),menu=document.getElementById("gMatMenu");
   const paint=()=>{const m=MATS.find(q=>q.id===mat());btn.querySelector(".sw").style.background=swatch(m.id);btn.querySelector(".nm").textContent=m.name;

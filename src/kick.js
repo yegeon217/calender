@@ -8,8 +8,8 @@ import * as THREE from "three";
 import { buildRunner } from "./runner.js";
 import { clamp, lerp, rnd, seg, sstep, eOut, eIn, eInOut, V, buzz } from "./fx-util.js";
 
-const K = { fp0: 0.62, fp1: 1.1, go: 0.82, kick: 2.9 };   // fp: 원래 화면 → 그 사람의 눈 · go: 달려 나감
-K.draw = K.kick + 0.6; K.pov = K.kick + 1.1; K.fire = K.pov + 1.25;
+const K = { fp0: 0.38, fp1: 0.84, go: 0.48, kick: 2.52 };   // fp: 원래 화면 → 그 사람의 눈 · go: 달려 나감
+K.draw = K.kick + 0.42; K.pov = K.kick + 0.86; K.fire = K.pov + 0.92;
 const G_FLY = 8.2, VY0 = 10.7, VZ0 = 6.2, G_DROP = 2300, BUL = 650;   // 공 비행(미터·초) · 떨어질 때(화면 단위) · 총알 속도(m/s)
 
 // Catmull-Rom 표 보간
@@ -45,33 +45,72 @@ const PT_FS = `uniform vec3 uCol; varying float vA;
 void main(){ float r = length(gl_PointCoord - 0.5) * 2.0, a = (1.0 - smoothstep(0.0, 1.0, r)) * vA; if (a < 0.003) discard; gl_FragColor = vec4(uCol, a); }`;
 
 export function buildKick(c) {
-  const { scene, cam, renderer, vw, vh, D, FLOOR, rb, ball, glint, frags, FRG, NFRAG, key, wall, floorM, dark, sparkSys } = c;
+  const { scene, cam, renderer, vw, vh, D, FLOOR, rb, ball, glint, frags, FRG, NFRAG, key, wall, floorM, dark, sparkSys, hemi } = c;
   const U = -FLOOR / 1.665, PR = renderer.getPixelRatio();   // 1미터 = U (눈높이가 화면 가운데 높이가 되도록)
   const warm = [];
   // ── 사람 ──
   const man = buildRunner({ hands: c.hands, dark }); man.root.scale.setScalar(U); man.root.visible = false; scene.add(man.root); warm.push(man.root);
+  // 1인칭: 눈 둘레(어깨·후드·뺨에 댄 개머리판)는 그리지 않음 → 화면을 덮는 큰 덩어리가 안 생김 (그림자는 그대로)
+  const clipU = { uEye: { value: V() }, uClipR: { value: 0.22 * U } }, patched = new Set();
+  man.root.traverse(o => { if (!o.isMesh) return; for (const m of [].concat(o.material)) { if (patched.has(m)) continue; patched.add(m);
+    m.onBeforeCompile = sh => { sh.uniforms.uEye = clipU.uEye; sh.uniforms.uClipR = clipU.uClipR;
+      sh.vertexShader = "varying vec3 vFpW;\n" + sh.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\n vFpW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      sh.fragmentShader = "uniform vec3 uEye; uniform float uClipR; varying vec3 vFpW;\n" + sh.fragmentShader.replace("void main() {", "void main() {\n if (distance(vFpW, uEye) < uClipR) discard;"); };
+    m.customProgramCacheKey = () => "fpClip"; } });
   // ── 바닥: 화면 바탕색 위에 은은한 얼룩 (멀수록 사라짐) + 그림자만 받는 판 ──
+  // ── 바닥: 콘크리트 광장 (2m마다 줄눈 · 골재 알갱이 · 얼룩) — 무늬와 요철을 같이 쓰고, 멀수록 지평선 안개로 사라짐 ──
+  const TILE = 4;   // 무늬 한 장 = 4m
   const gTex = (() => {
-    const n = 512, cv = document.createElement("canvas"); cv.width = cv.height = n; const x = cv.getContext("2d"), im = x.createImageData(n, n), d = im.data, ink = dark ? [210, 214, 224] : [60, 64, 78];
+    const n = 512, cv = document.createElement("canvas"); cv.width = cv.height = n; const x = cv.getContext("2d"), im = x.createImageData(n, n), d = im.data;
+    const base = dark ? [92, 92, 96] : [184, 181, 174], P = (u, v, f) => pnoise((u / n) * f, (v / n) * f, f);
+    const stains = Array.from({ length: 7 }, () => [Math.random() * n, Math.random() * n, rnd(30, 90), rnd(0.04, 0.1)]);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-      const P = (u, v, f) => pnoise((u / n) * f, (v / n) * f, f);   // 주기가 맞는 잡음이라 이어 붙여도 이음매가 없음
-      const m = P(i, j, 6) * 0.55 + P(i, j, 17) * 0.3 + P(i, j, 53) * 0.15, k = (i * 7 + j * 13) % 5;
-      const a = Math.max(0, m - 0.42) * 0.16 + (Math.random() < 0.012 ? 0.08 : 0) + k * 0.0015;
-      d[(j * n + i) * 4] = ink[0]; d[(j * n + i) * 4 + 1] = ink[1]; d[(j * n + i) * 4 + 2] = ink[2]; d[(j * n + i) * 4 + 3] = a * 255;
+      let v = (P(i, j, 4) - 0.5) * 0.14 + (P(i, j, 13) - 0.5) * 0.08 + (P(i, j, 61) - 0.5) * 0.07 + (Math.random() - 0.5) * 0.07;
+      const r = Math.random(); if (r < 0.018) v -= rnd(0.1, 0.26); else if (r < 0.03) v += rnd(0.06, 0.14);
+      for (const [sx, sy, sr, sa] of stains) { let dx = Math.abs(i - sx), dy = Math.abs(j - sy); dx = Math.min(dx, n - dx); dy = Math.min(dy, n - dy); const q = 1 - Math.hypot(dx, dy) / sr; if (q > 0) v -= sa * q * q * (0.6 + 0.8 * P(i, j, 23)); }
+      // 줄눈: 홈은 어둡고 바로 옆 모서리는 살짝 밝음
+      const ji = Math.min(i % (n / 2), n / 2 - (i % (n / 2))), jj = Math.min(j % (n / 2), n / 2 - (j % (n / 2))), jm = Math.min(ji, jj);
+      if (jm < 2.2) v -= 0.3 * (1 - jm / 2.2); else if (jm < 3.6) v += 0.05;
+      const k = (j * n + i) * 4; d[k] = clamp(base[0] * (1 + v), 0, 255); d[k + 1] = clamp(base[1] * (1 + v), 0, 255); d[k + 2] = clamp(base[2] * (1 + v * 1.05), 0, 255); d[k + 3] = 255;
     }
-    x.putImageData(im, 0, 0); const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(26, 26); t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace; return t;
+    x.putImageData(im, 0, 0); const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(260 / TILE, 260 / TILE); t.anisotropy = 8; t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const fadeU = { uCam: { value: V() }, uNear: { value: 9 * U }, uFar: { value: 34 * U } };
-  const gMat = new THREE.MeshBasicMaterial({ map: gTex, transparent: true, depthWrite: false, opacity: 0 });
+  const bTex = gTex.clone(); bTex.colorSpace = THREE.NoColorSpace; bTex.needsUpdate = true;
+  const fadeU = { uCam: { value: V() }, uNear: { value: 10 * U }, uFar: { value: 33 * U } };
+  const gMat = new THREE.MeshStandardMaterial({ map: gTex, bumpMap: bTex, bumpScale: 1.6, roughness: 0.93, metalness: 0, transparent: true, depthWrite: false, opacity: 0 });
   gMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, fadeU);
     sh.vertexShader = "varying vec3 vWp;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;");
     sh.fragmentShader = "uniform vec3 uCam; uniform float uNear, uFar; varying vec3 vWp;\n" + sh.fragmentShader.replace("#include <dithering_fragment>", "#include <dithering_fragment>\n gl_FragColor.a *= 1.0 - smoothstep(uNear, uFar, length(vWp.xz - uCam.xz));");
   };
   gMat.customProgramCacheKey = () => "kickGround";
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(260 * U, 260 * U), gMat); ground.rotation.x = -Math.PI / 2; ground.position.y = FLOOR - 0.6; ground.renderOrder = -5; ground.visible = false; scene.add(ground); warm.push(ground);
-  const gShadow = new THREE.Mesh(new THREE.PlaneGeometry(40 * U, 40 * U), new THREE.ShadowMaterial({ opacity: 0 })); gShadow.rotation.x = -Math.PI / 2; gShadow.position.y = FLOOR + 0.3; gShadow.receiveShadow = true; gShadow.visible = false; scene.add(gShadow); warm.push(gShadow);
-  const SHADOW = dark ? 0.42 : 0.24;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(260 * U, 260 * U), gMat); ground.rotation.x = -Math.PI / 2; ground.position.y = FLOOR - 0.6; ground.receiveShadow = true; ground.renderOrder = -5; ground.visible = false; scene.add(ground); warm.push(ground);
+  // 불투명 단계에서 맨 먼저 그림 (깊이는 안 씀) · 처음엔 화면 바탕 위로 서서히 (미리 곱한 알파)
+  // ── 하늘: 지평선은 옅은 안개 → 위로 갈수록 파랗고, 해(등 뒤) 쪽은 밝고 따뜻함 · 엷은 구름 (카메라를 따라다녀 끝없이 멂) ──
+  const skyU = { uA: { value: 0 }, uSun: { value: V(0.35, 0.62, 0.7).normalize() }, uTop: { value: new THREE.Color(dark ? 0x0a1022 : 0x3b73c2) }, uHor: { value: new THREE.Color(dark ? 0x37324a : 0xdde6ee) },
+    uGnd: { value: new THREE.Color(dark ? 0x3a3a40 : 0xc9c8c4) }, uSunC: { value: new THREE.Color(dark ? 0xff8a5a : 0xfff0d0) }, uCl: { value: dark ? 0.35 : 1 } };
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(D * 4, 48, 24), new THREE.ShaderMaterial({ uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: false,
+    vertexShader: "varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `uniform float uA, uCl; uniform vec3 uSun, uTop, uHor, uGnd, uSunC; varying vec3 vD;
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vn(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+void main(){
+  vec3 d = normalize(vD); float y = d.y;
+  vec3 c = mix(uHor, uTop, pow(clamp(y, 0.0, 1.0), 0.5));
+  c = mix(c, uGnd, smoothstep(0.0, -0.05, y));
+  float sd = max(dot(d, uSun), 0.0); c += uSunC * (pow(sd, 5.0) * 0.22 + pow(sd, 90.0) * 0.5);
+  if (y > 0.0) { vec2 q = d.xz / (y + 0.1) * 1.4; float n = fbm(q + vec2(3.1, 0.7)); float cl = smoothstep(0.5, 0.82, n) * smoothstep(0.0, 0.2, y) * uCl;
+    c = mix(c, mix(uHor, vec3(1.0), 0.55) * (0.9 + 0.1 * n), cl * 0.6); }
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+  gl_FragColor *= uA;
+}` }));
+  sky.renderOrder = -10; sky.frustumCulled = false; sky.visible = false; scene.add(sky); warm.push(sky);
+  let skyEnv = null, env0 = null, envI0 = 1;
+  if (c.pmrem) { const es = new THREE.Scene(), sm = sky.material.clone(); sm.uniforms = THREE.UniformsUtils.clone(skyU); sm.uniforms.uA.value = 1; sm.uniforms.uCl.value *= 0.6; sm.uniforms.uGnd.value = new THREE.Color(dark ? 0x202024 : 0x6e6b66);   // 비친 바닥은 더 어둡게 (쇠 느낌)
+    es.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), sm)); skyEnv = c.pmrem.fromScene(es, 0.02, 1, 200).texture; sm.dispose(); }
+  const hemi0 = hemi ? { c: hemi.color.clone(), g: hemi.groundColor.clone() } : null, hc = new THREE.Color();
   // ── 먼지 ──
   const NP = 320, pPos = new Float32Array(NP * 3), pSize = new Float32Array(NP), pAlpha = new Float32Array(NP), PS = [];
   const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3)); pGeo.setAttribute("aSize", new THREE.BufferAttribute(pSize, 1)); pGeo.setAttribute("aAlpha", new THREE.BufferAttribute(pAlpha, 1));
@@ -151,7 +190,7 @@ export function buildKick(c) {
     const s0 = 0.7, s1 = Math.max(s0 + 4, (P0.z - (pile.z + D)) / U - 0.06), d = s1 - s0;
     let vmax = 7, ta = 0.85, td = 0.75; if (d < vmax * (ta + td) / 2) vmax = d / ((ta + td) / 2);
     run = { s0, s1, vmax, ta, td, tc: Math.max(0, (d - vmax * (ta + td) / 2) / vmax) };
-    kStop = kRun0 + ta + run.tc + td; kEnd = kStop + 1.45;
+    kStop = kRun0 + ta + run.tc + td; kEnd = kStop + 0.8;
     // 걸음: 뒷발(오른발)부터 · 빠를수록 자주·길게, 디딘 시간은 짧게 · 멈출 땐 발을 앞에 놓아 버팀
     stL[stL.length - 1].t1 = kRun0 + 0.2; stR[stR.length - 1].t1 = kRun0;
     let t = kRun0, foot = stR, last = { L: stL[stL.length - 1], R: stR[stR.length - 1] };
@@ -235,9 +274,12 @@ export function buildKick(c) {
       q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.09 * bo + 0.12 * un, 0, -0.28 * bo)));
       const p = E.clone().addScaledVector(dir, 0.085 + 0.05 * bo + 0.2 * un).sub(man.rifle.userData.eye.clone().applyQuaternion(q)).add(V(-0.02 * un, -0.04 * bo - 0.13 * un, 0));
       const w = rifleW(t);
-      // 등 → 오른쪽 어깨 위로 크게 휘돌려 견착
-      const mid = Math.sin(Math.PI * w);
-      man.placeRifle(back0.p.clone().lerp(p, w).add(V(-0.16 * mid, -0.1 * mid, 0.3 * mid)), back0.q.clone().slerp(q, w));
+      // 등 → 시야 아래 허리 앞(총구를 앞아래로) → 아래에서 올라와 견착 · 내려서 멜 땐 거꾸로
+      const fl = V(dir.x, 0, dir.z).normalize(), dl = fl.clone().multiplyScalar(Math.cos(0.62)).add(V(0, -Math.sin(0.62), 0)), xl = V(0, 1, 0).cross(dl).normalize(), yl = dl.clone().cross(xl);
+      const ql = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xl, yl, dl)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.45)));
+      const pl = E.clone().addScaledVector(fl, 0.22).add(V(-0.07, -0.42, 0)).sub(man.rifle.userData.eye.clone().applyQuaternion(ql));
+      if (w < 0.45) { const u = sstep(w / 0.45), mid = Math.sin(Math.PI * u); man.placeRifle(back0.p.clone().lerp(pl, u).add(V(-0.2 * mid, -0.08 * mid, 0.04 * mid)), back0.q.clone().slerp(ql, u)); }
+      else { const u = sstep((w - 0.45) / 0.55); man.placeRifle(pl.clone().lerp(p, u), ql.clone().slerp(q, u)); }
       const gR = man.rp("grip").add(V(-0.025, -0.035, -0.06).applyQuaternion(man.rifle.quaternion)), gL = man.rp("fore").add(V(0.02, -0.045, -0.07).applyQuaternion(man.rifle.quaternion));
       const bolt = boltAmount(t);
       if (bolt > 0) { const kb = man.toRoot(man.rifle, V(-0.07, 0.01 + 0.03 * Math.min(1, bolt * 3), -0.02 - 0.09 * Math.sin(Math.PI * Math.min(1, bolt * 1.1)))); gR.lerp(kb.add(V(-0.02, -0.03, -0.07)), Math.sin(Math.PI * bolt) > 0 ? Math.min(1, Math.sin(Math.PI * bolt) * 2.5) : 0); }
@@ -266,7 +308,7 @@ export function buildKick(c) {
     let aL = 0, aR = 0, eL = -0.25, eR = -0.25, abL = 0.12, abR = 0.12;
     if (v > 0.3) { const A = 0.35 + 0.7 * r; aL = -A * sw; aR = A * sw; eL = -1.35 - 0.35 * Math.max(0, -aL / A) * r; eR = -1.35 - 0.35 * Math.max(0, -aR / A) * r; abL = abR = 0.12; }
     if (kicking) { const u = t - K.kick, w = Math.sin(Math.PI * clamp((u + 0.45) / 1.3, 0, 1));
-      aL = lerp(aL, -0.5, w); abL = lerp(abL, 1.15, w); eL = lerp(eL, -0.5, w); aR = lerp(aR, curve([-0.45, -0.1, 0.1, 0.4, 0.9], [0, 0.6, 0.2, -0.4, 0], u), w); abR = lerp(abR, 0.45, w); eR = lerp(eR, -0.8, w); }
+      aL = lerp(aL, -0.5, w); abL = lerp(abL, 1.15, w); eL = lerp(eL, -0.5, w); aR = lerp(aR, curve([-0.45, -0.1, 0.1, 0.4, 0.9], [0, -0.3, -0.55, -0.35, 0], u), w); abR = lerp(abR, 0.75, w); eR = lerp(eR, -0.8, w); }
     if (v < 0.3 && !kicking) { const b = Math.sin(t * 2.6); aL = aR = 0.04 * b; eL = eR = -0.22; }
     man.setE("armL", aL - lean * 0.3, 0, abL); man.setE("armR", aR - lean * 0.3, 0, -abR);
     man.setE("foreL", eL, 0, 0); man.setE("foreR", eR, 0, 0); man.setE("handL", 0, 0, 0.15); man.setE("handR", 0, 0, -0.15);
@@ -286,7 +328,7 @@ export function buildKick(c) {
     for (let i = 0; i < NFRAG; i++) {
       const p = V(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)); if (p.lengthSq() > 1) { i--; continue; }
       p.multiplyScalar(rb * 0.95).add(C);
-      const away = p.clone().sub(C).normalize(), big = Math.random() < 0.08, s = rb * (big ? rnd(0.11, 0.2) : 0.025 + Math.pow(Math.random(), 2.4) * 0.09);
+      const away = p.clone().sub(C).normalize(), big = Math.random() < 0.1, s = rb * 1.7 * (big ? rnd(0.11, 0.2) : 0.03 + Math.pow(Math.random(), 2.2) * 0.1);   // 쇠공이 작아도 파편은 잘 보이게
       const v = vb.clone().multiplyScalar(rnd(0.4, 0.75)).addScaledVector(dir, rnd(1.2, 7.5) * U).addScaledVector(away, rnd(0.5, 4.5) * U).add(V(0, rnd(0, 2.6) * U, 0));
       if (Math.random() < 0.1) v.addScaledVector(dir, -rnd(2, 5) * U);   // 일부는 맞은 쪽으로 튀어나옴
       FRG[i] = { p, v, r: V(rnd(0, 6), rnd(0, 6), rnd(0, 6)), w: V(rnd(-25, 25), rnd(-25, 25), rnd(-25, 25)), s: V(s * rnd(0.6, 1.4), s * rnd(0.5, 1.3), s * rnd(0.4, 1)), rest: false };
@@ -359,10 +401,10 @@ export function buildKick(c) {
   let fireReal = 0, tReal = 0, impReal = 0;
   function timeScale() {
     if (k < K.pov + 0.45) return 1;
-    if (k < K.fire) return lerp(1, 0.55, sstep(seg(k, K.pov + 0.45, K.pov + 0.8)));
-    if (kImp === Infinity || k < kImp) return 0.045;
-    const u = tReal - impReal; if (u < 0.45) return 0.045;
-    return lerp(0.045, 1, eIn(seg(u, 0.45, 1.3)));
+    if (k < K.fire) return lerp(1, 0.72, sstep(seg(k, K.pov + 0.28, K.pov + 0.55)));
+    if (kImp === Infinity || k < kImp) return 0.065;
+    const u = tReal - impReal; if (u < 0.26) return 0.045;
+    return lerp(0.045, 1, eIn(seg(u, 0.26, 0.78)));
   }
 
   function tick(dtR) {
@@ -413,11 +455,14 @@ export function buildKick(c) {
     pGeo.attributes.position.needsUpdate = pGeo.attributes.aSize.needsUpdate = pGeo.attributes.aAlpha.needsUpdate = true;
     camera(dtR);
     // 바닥·빛
-    const gA = sstep(seg(k, 0.35, 1.4)); gMat.opacity = gA; ground.visible = gShadow.visible = gA > 0.001; gShadow.material.opacity = SHADOW * gA; dust.visible = true;
+    const gA = sstep(seg(k, 0.3, 1.2)); gMat.opacity = gA; ground.visible = sky.visible = gA > 0.001; skyU.uA.value = gA; sky.position.copy(cam.position); dust.visible = true;
+    if (hemi0) { hemi.color.copy(hemi0.c).lerp(hc.copy(skyU.uHor.value).lerp(skyU.uTop.value, 0.22), gA * 0.55); hemi.groundColor.copy(hemi0.g).lerp(skyU.uGnd.value, gA); }
+    // 공을 내려다보며 찰 땐 가슴·팔이 시야를 덮지 않게 더 넓게 비움 (다리와 차는 발만 보임)
+    clipU.uEye.value.copy(eyeW); clipU.uClipR.value = U * lerp(0.26, 0.36, Math.sin(Math.PI * clamp((k - K.kick + 0.5) / 1.1, 0, 1)));
+    if (skyEnv && gA > 0.5 && scene.environment !== skyEnv) { env0 = scene.environment; envI0 = scene.environmentIntensity; scene.environment = skyEnv; scene.environmentIntensity = 0.9; }
     wall.material.opacity = wall0 * (1 - sstep(seg(k, 0.25, 0.7))); floorM.visible = false;
     const fc = man.root.visible ? man.root.position : ball.position;
     key.target.position.set(fc.x, FLOOR, fc.z); key.position.copy(key.target.position).add(tmp.copy(keyOff0).lerp(keyOff1, sstep(seg(k, 0.4, 1.4))));
-    gShadow.position.set(fc.x, FLOOR + 0.3, fc.z);
     fadeU.uCam.value.copy(cam.position);
     if (k >= kEnd && done) { const d = done; done = null; d(); }
   }
@@ -430,15 +475,14 @@ export function buildKick(c) {
     if (k >= K.draw + 0.36) once("rack", () => { snd.rack(); buzz(1); });
     if (k >= K.pov) once("pov", () => { snd.zoom(); snd.breeze(3.2); buzz(1); });
     if (k >= K.pov + 0.12) once("in", () => snd.breath(0));
-    if (k >= K.pov + 0.62) once("out", () => snd.breath(1));
-    for (let i = 0; i < 4; i++) if (k >= K.pov + 0.78 + i * 0.16) once("hb" + i, () => { snd.heart(); buzz(1); });
+    if (k >= K.pov + 0.4) once("out", () => snd.breath(1));
+    for (let i = 0; i < 3; i++) if (k >= K.pov + 0.5 + i * 0.13) once("hb" + i, () => { snd.heart(); buzz(1); });
     if (k >= K.fire) once("fire", fire);
     if (kExit < Infinity && k >= kExit) once("exit", () => { snd.rack(); casingOut(); });
     if (kExit < Infinity && k >= kExit + 0.45) once("sling", () => snd.cloth());
-    if (kExit < Infinity && k >= kExit + 0.5) once("plan", planRun);
+    if (kExit < Infinity && k >= kExit + 0.3) once("plan", planRun);   // 달려 나가기(kRun0) 전에 계획
     if (run && k >= kStop - 0.55) once("skid", () => { snd.skid(); puff(pathX, P0.z - runS(k) * U, 8, 1.2 * U, 1, 0.4); buzz(2); });
-    if (run && k >= kStop + 0.3) once("exhale", () => snd.breath(1));
-    if (run && k >= kStop + 0.35) once("intoEye", () => snd.whoosh(0.9));
+    if (run && k >= kStop + 0.15) once("exhale", () => snd.breath(1));
   }
   function fire() {
     const d = K.fire - K.kick, eye = eyeW.clone(), lead = V();
@@ -455,8 +499,8 @@ export function buildKick(c) {
     const vb = V(0, (VY0 - G_FLY * (k - K.kick)) * U, -VZ0 * U); impP.copy(tr.p1);
     burst(impP, vb, impDir); if (sparkSys) sparkSys.fire(impP, impDir);
     c.flash(impP); snd.impact(); buzz([3, 40, 3, 40, 3]);
-    kExit = kImp + 0.78; kRun0 = kExit + 0.62;
-    setTimeout(() => snd.shatter(), 520);
+    kExit = kImp + 0.46; kRun0 = kExit + 0.48;
+    setTimeout(() => snd.shatter(), 400);
   }
   function casingOut() {
     const p = man.toRoot(man.rifle, V(-0.03, 0.04, 0.05)), w = man.root.localToWorld(p.clone());
@@ -476,7 +520,7 @@ export function buildKick(c) {
     if (k >= K.pov && k < kExit) {    // 조준경
       scope = 1; povT += dtR; fired = Math.max(0, 1 - (tReal - fireReal) / 0.12) * (fireReal > 0 ? 1 : 0);
       // 숨 쉬는 흔들림 (숨 참으면 거의 멈춤) + 손떨림 + 반동(용수철)
-      const hold = sstep(seg(k, K.pov + 0.7, K.pov + 0.95)) * (fireReal ? 0 : 1), A = lerp(0.32, 0.05, hold), tt = tReal;
+      const hold = sstep(seg(k, K.pov + 0.42, K.pov + 0.64)) * (fireReal ? 0 : 1), A = lerp(0.32, 0.05, hold), tt = tReal;
       const sy = Math.sin(tt * 1.7) * A * 0.6 + Math.sin(tt * 5.3) * 0.02, sp = Math.sin(tt * 3.4) * A * 0.45 + Math.sin(tt * 7.1) * 0.015;
       sway.rv += (-90 * sway.rec - 11 * sway.rv) * dtR; sway.rec += sway.rv * dtR;
       sway.yaw = sy; sway.pitch = sp + sway.rec * 0.22;
@@ -490,7 +534,7 @@ export function buildKick(c) {
     } else {
       // 볼 곳: 다가갈 땐 공 너머 → 공 · 찬 뒤엔 날아가는 공 · 쏜 뒤엔 맞힌 자리 → 파편 · 달릴 땐 파편 쪽 땅 · 멈추면 앞을 똑바로
       let T, down = 0;
-      if (k < K.kick - 0.05) { const w = sstep(seg(k, K.go, K.kick - 0.4)); T = P0.clone().add(V(0, 0.4 * U * (1 - w), -3 * U * (1 - w))); down = 0.08 + 0.12 * w; }
+      if (k < K.kick - 0.05) { const w = sstep(seg(k, K.go, K.kick - 0.4)); T = P0.clone().add(V(0, 0.4 * U * (1 - w), -(3 - 1.6 * w) * U)); down = 0.06 + 0.08 * w; }   // 공 조금 너머를 봄 (다가가면 공은 화면 아래로 · 차면 솟아오름)
       else if (k < K.pov) T = bState === "fly" ? ball.position.clone() : P0.clone();
       else if (!run || k < kRun0) { T = impP.clone().lerp(pile, sstep(seg(k, kExit + 0.45, kExit + 1.1))); down = 0.32 * sstep(seg(k, kExit + 0.05, kExit + 0.4)); }
       else { T = V(pathX, FLOOR, pile.z); down = 0.56; }   // 달릴 땐 앞쪽 땅을 봐서 흔드는 손·올라오는 무릎·발끝이 아래로 보임
@@ -504,7 +548,8 @@ export function buildKick(c) {
       const vNow = k < K.kick ? appV(k) : run ? runV(k) : 0;
       dir.copy(fp.dir).applyAxisAngle(V().crossVectors(fp.dir, up).normalize(), -0.03 * fp.jolt);
       if (vNow > 0.5) dir.add(V(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(0.0025 * vNow / 7)).normalize();
-      if (dir.y < -0.68) { const h = Math.sqrt(1 - 0.68 * 0.68) / (Math.hypot(dir.x, dir.z) || 1); dir.x *= h; dir.z *= h; dir.y = -0.68; }   // 너무 내려다보지 않게
+      const yMin = k > K.kick - 0.6 && k < K.kick + 0.6 ? -0.5 : -0.68;   // 너무 내려다보지 않게 (찰 땐 더: 가슴·총이 안 보이게)
+      if (dir.y < yMin) { const h = Math.sqrt(1 - yMin * yMin) / (Math.hypot(dir.x, dir.z) || 1); dir.x *= h; dir.z *= h; dir.y = yMin; }   // 너무 내려다보지 않게
       roll = 0.03 * fp.side * fp.jolt * clamp(vNow / 4, 0.3, 1);
       p.copy(eye); if (endW > 0) p.lerp(V(pathX, 0, pile.z + D), endW);
       const fpF = lerp(FOV_FP, 88, run ? sstep(seg(k, kRun0 - 0.2, kRun0 + 0.5)) : 0); fov = endW > 0 ? lerp(fpF, fov0, endW) : fpF;
@@ -539,7 +584,9 @@ export function buildKick(c) {
     toDomain() {
       on = false; const dx = -pathX, dz = -(pile.z);
       for (let i = 0; i < NFRAG; i++) { const f = FRG[i]; if (f) { f.p.x += dx; f.p.z += dz; } }
-      [man.root, ground, gShadow, dust, casing, tracer, ...wakes].forEach(o => (o.visible = false));
+      [man.root, ground, sky, dust, casing, tracer, ...wakes].forEach(o => (o.visible = false));
+      if (hemi0) { hemi.color.copy(hemi0.c); hemi.groundColor.copy(hemi0.g); }
+      if (env0) { scene.environment = env0; scene.environmentIntensity = envI0; env0 = null; }
       key.target.position.set(0, 0, 0); key.position.copy(keyOff0);
       cam.fov = fov0; cam.near = 20; cam.up.set(0, 1, 0); cam.updateProjectionMatrix();
       cam.position.set(0, 0, D); cam.lookAt(0, 0, 0);

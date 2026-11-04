@@ -239,7 +239,7 @@ async function prepare() {
   }
 
   const mass = new THREE.Group(); hand.root.add(mass);   // 손바닥 위 종이 뭉치 (마지막엔 그 자리에 쇠공)
-  const rb = clamp(Math.min(vw, vh) * 0.085, 24, 48);
+  const rb = clamp(Math.min(vw, vh) * 0.064, 18, 36);   // 쇠공 반지름
 
   // ── 꽉 쥘 때 주먹 둘레로 터지는 집중선 (만화처럼 '꽉!') ── 쐐기 모양: 주먹 쪽은 뾰족, 바깥으로 갈수록 두꺼움
   const NI = 22, inkPos = new Float32Array(NI * 9), inkCol = new Float32Array(NI * 12), inkGeo = new THREE.BufferGeometry();
@@ -305,7 +305,7 @@ async function prepare() {
       boomLight.intensity = Math.max(0, boomLight.intensity - dt * 24);
     },
   };
-  const kickFx = buildKick({ scene, cam, renderer, vw, vh, D, FLOOR, rb, ball, glint, frags, FRG, NFRAG, key, wall, floorM, dark, hands: [H3, H4], sparkSys,
+  const kickFx = buildKick({ scene, cam, renderer, vw, vh, D, FLOOR, rb, ball, glint, frags, FRG, NFRAG, key, wall, floorM, dark, hemi, pmrem, hands: [H3, H4], sparkSys,
     glowTex: radialTex([[0, "rgba(255,255,255,1)"], [0.3, "rgba(255,240,210,.6)"], [1, "rgba(255,220,180,0)"]]),
     flash: p => { flashSpr.position.copy(p); flashSpr.material.opacity = 1; boomLight.position.copy(p); boomLight.intensity = 9; floorM.visible = false; uiFlash && uiFlash(); } });
 
@@ -368,7 +368,7 @@ async function prepare() {
   const T_SUCKED = Math.max(...papers.map(pp => pp.t1), SUCK + 0.6) + 0.12;
   // 순서: 쫙 펴기(예비 동작) → 덥석 쥐기 → 주먹을 들이밀고 세 번 꽉 → 쇠로 변하는 빛 → 손바닥 위로 돌려 펴기 → 공을 띄우고 손은 퇴장
   const T = { stretch: T_SUCKED, close: T_SUCKED + 0.2, closed: T_SUCKED + 0.36, turn: T_SUCKED + 0.48, pulses: [T_SUCKED + 0.95, T_SUCKED + 1.5, T_SUCKED + 2.1] };
-  T.glow = T.pulses[2] + 0.45; T.reveal = T.glow + 0.5; T.open = T.reveal + 0.38; T.lift = T.open + 0.75; T.float = T.lift + 0.85;
+  T.glow = T.pulses[2] + 0.45; T.reveal = T.glow + 0.42; T.open = T.reveal + 0.36; T.lift = T.open + 0.42; T.float = T.lift + 0.85;
   // 쥐어짤 때마다 뭉치가 단계적으로 작아짐 (마지막엔 쇠공 크기)
   const R_STEPS = [RM, RM * 0.8, RM * 0.64, rb];
   const massR = t => {

@@ -38,6 +38,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .gbar button[data-tool="fire"][aria-pressed="true"]{background:#e2511c;color:#fff}
 .gbar button[data-tool="water"][aria-pressed="true"]{background:#2a7fd4;color:#fff}
 .gbar button[data-tool="gun"][aria-pressed="true"]{background:#47513f;color:#fff}
+.gbar button[data-tool="bazooka"][aria-pressed="true"]{background:#5a6236;color:#fff}
 #gZero[data-mode="grav"] .ic-zero,#gZero[data-mode="zero"] .ic-grav{display:none}
 .gsep{width:1px;align-self:stretch;margin:5px 3px;background:var(--line);flex:none}
 @media (max-width:760px){.gbar button,.gfin button{padding:7px 8px}.gbar button .lbl,.gfin button .lbl{display:none}.gsep{margin:5px 1px}}
@@ -51,7 +52,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 @media (hover:hover){.gfin button:hover{background:color-mix(in srgb,var(--ink) 8%,transparent)}}
 .gfin #gCrushBtn{color:#8a4b14}
 .gfin #gStompBtn{color:#6b3f1d}
-@media (prefers-color-scheme:dark){.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}}
+.gfin #gPalmBtn{color:#6a2fa8}
+.gfin #gNukeBtn{color:#b8860b}
+@media (prefers-color-scheme:dark){.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}.gfin #gPalmBtn{color:#c9a2ff}.gfin #gNukeBtn{color:#ffd24a}}
 /* 재질 */
 .gmat{position:relative;flex:none}
 .gpill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.78rem;font-weight:700;touch-action:manipulation}
@@ -174,6 +177,7 @@ html.crush-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
 html.crush-on #sheet{display:none}
 #gCrush{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:45;touch-action:none}
 #gCrushUI{position:fixed;inset:0;z-index:46;pointer-events:none}
+#gFx3d{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:17;pointer-events:none}
 #gCrushUI .cr-scope{position:absolute;inset:0;width:100%;height:100%}
 #gCrushUI .cr-flash{position:absolute;inset:0;background:#fff8ec;opacity:0;transition:opacity .25s}
 #gCrushUI .cr-flash.on{opacity:.85;transition:none}
@@ -201,3 +205,18 @@ html.crush-on #sheet{display:none}
 /* 아래부터: 그을린 자국 → 붙어 있는 칸 → 떨어진 조각 → 효과 */
 #gDecal,#gWall,#gFree,#gFx{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none}
 #gDecal{z-index:13}#gWall{z-index:14}#gFree{z-index:15}#gFx{z-index:16}
+/* 손바닥 필살기: 화면 위쪽 막대는 거의 숨김 · 기술 이름 (영역전개처럼, 원소 빛깔) */
+html.palm-on #chrome{opacity:.06;pointer-events:none;transition:opacity .8s}
+#gPalmT{position:fixed;left:0;right:0;top:calc(9vh + var(--it,0px));z-index:18;text-align:center;pointer-events:none;color:#f8f3ec;opacity:0;will-change:transform,opacity;
+  font-family:"Noto Serif KR","Nanum Myeongjo","AppleMyungjo","Batang",serif}
+#gPalmT small{display:block;font-size:clamp(13px,3.7vw,22px);font-weight:700;letter-spacing:.8em;padding-left:.8em;color:var(--pc);text-shadow:0 0 12px var(--pc)}
+#gPalmT b{display:block;margin-top:10px;font-size:clamp(42px,13vw,96px);font-weight:900;line-height:1.05;letter-spacing:.04em;
+  text-shadow:0 0 1px #000,0 5px 0 rgba(0,0,0,.55),0 8px 28px rgba(0,0,0,.9),0 0 46px var(--pc)}
+#gPalmT i{display:block;margin:16px auto 0;width:min(72vw,440px);height:2px;background:linear-gradient(90deg,transparent,var(--pc) 30%,#fff 50%,var(--pc) 70%,transparent);transform:scaleX(0)}
+#gPalmT em{display:block;margin-top:12px;font-style:normal;font-size:clamp(11px,3.1vw,15px);font-weight:700;letter-spacing:.35em;padding-left:.35em;opacity:.8;text-shadow:0 2px 8px rgba(0,0,0,.9)}
+#gPalmT.on{animation:domIn .7s cubic-bezier(.2,.9,.25,1) forwards}
+#gPalmT.on b{animation:domPress 2s ease-out .35s both}
+#gPalmT.on i{transition:transform .9s .15s cubic-bezier(.2,.8,.2,1);transform:scaleX(1)}
+#gPalmT.off{animation:none;opacity:0;transform:scale(1.12);transition:opacity .22s,transform .22s}
+
+html.nuke-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}

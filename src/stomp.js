@@ -270,8 +270,8 @@ export function printSprite(U, dark) {
   const x = cv.getContext("2d"); x.setTransform(U, 0, 0, U, -X0 * U, -Y0 * U);
   const O = outline(10), I1 = inset(O, 0.012), I2 = inset(O, 0.058), I3 = inset(O, 0.068);
   // 눌려 들어간 자리
-  x.save(); path(x, O); x.fillStyle = dark ? "rgba(0,0,0,.2)" : "rgba(60,50,40,.07)"; x.fill(); x.clip();
-  x.lineWidth = 0.05; x.strokeStyle = dark ? "rgba(0,0,0,.3)" : "rgba(40,32,24,.16)"; x.shadowColor = x.strokeStyle; x.shadowBlur = 0.02 * U; path(x, O); x.stroke();
+  x.save(); path(x, O); x.fillStyle = dark ? "rgba(0,0,0,.26)" : "rgba(60,50,40,.1)"; x.fill(); x.clip();
+  x.lineWidth = 0.05; x.strokeStyle = dark ? "rgba(0,0,0,.36)" : "rgba(40,32,24,.22)"; x.shadowColor = x.strokeStyle; x.shadowBlur = 0.02 * U; path(x, O); x.stroke();
   x.restore();
   // 돌기는 따로 그린 뒤 얼룩지게 지워서 얹음
   const L = document.createElement("canvas"); L.width = cv.width; L.height = cv.height;
@@ -297,15 +297,15 @@ export function printSprite(U, dark) {
   l.restore();
   // 흙먼지로 찍힌 자국이라 오톨도톨하고 군데군데 옅음: 모래알 크기로 지우고, 넓게 옅어진 곳도 몇 군데
   const gn = document.createElement("canvas"); gn.width = gn.height = 192; const gx = gn.getContext("2d"), gi = gx.createImageData(192, 192);
-  for (let i = 0; i < 192 * 192; i++) { const r = Math.random(); gi.data[i * 4 + 3] = r < 0.42 ? 0 : r < 0.8 ? rnd(40, 140) : rnd(150, 235); }
+  for (let i = 0; i < 192 * 192; i++) { const r = Math.random(); gi.data[i * 4 + 3] = r < 0.52 ? 0 : r < 0.86 ? rnd(30, 120) : rnd(130, 210); }
   gx.putImageData(gi, 0, 0);
   l.setTransform(1, 0, 0, 1, 0, 0); l.globalCompositeOperation = "destination-out";
   l.fillStyle = l.createPattern(gn, "repeat"); l.fillRect(0, 0, L.width, L.height);
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 15; i++) {
     const cx = rnd(0, L.width), cy = rnd(0, L.height), r = rnd(0.03, 0.09) * U, gr = l.createRadialGradient(cx, cy, 0, cx, cy, r);
     gr.addColorStop(0, `rgba(0,0,0,${rnd(0.25, 0.6)})`); gr.addColorStop(1, "rgba(0,0,0,0)"); l.fillStyle = gr; l.fillRect(cx - r, cy - r, r * 2, r * 2);
   }
-  l.globalCompositeOperation = "source-in"; l.fillStyle = dark ? "rgba(210,198,182,.55)" : "rgba(66,54,44,.74)"; l.fillRect(0, 0, L.width, L.height);
+  l.globalCompositeOperation = "source-in"; l.fillStyle = dark ? "rgba(210,198,182,.64)" : "rgba(62,50,40,.84)"; l.fillRect(0, 0, L.width, L.height);
   x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(L, 0, 0);
   // 테두리 밖으로 튄 흙먼지
   x.setTransform(U, 0, 0, U, -X0 * U, -Y0 * U);
