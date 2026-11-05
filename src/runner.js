@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { noiseTex } from "./fx-util.js";
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
-const sm = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+export const sm = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const AO = 0.2;   // 쉬는 자세에서 팔이 몸에서 벌어진 각도
 const armDir = side => V(Math.sin(AO) * side, -Math.cos(AO), 0);
 
@@ -25,7 +25,7 @@ export const LEN = { thigh: 0.43, shin: 0.41, arm: 0.29, fore: 0.26, ankle: 0.08
 
 // ── 관(옷 입은 몸통·팔·다리): 고리(단면)를 이어 붙임 ──
 // 고리: c 중심, a 관이 뻗는 방향, u 단면 가로 방향, ax·az 반지름, n 모양(2 타원, 클수록 네모에 가까움)
-function tubeGeo(rings, N, weightFn) {
+export function tubeGeo(rings, N, weightFn) {
   const pos = [], nor = [], uv = [], si = [], sw = [], idx = [];
   let vacc = 0;
   for (let k = 0; k < rings.length; k++) {
@@ -49,8 +49,8 @@ function tubeGeo(rings, N, weightFn) {
   return g;
 }
 const DOWN = V(0, -1, 0), XA = V(1, 0, 0);
-const vRings = (list, x0, n) => list.map(([y, ax, az, zo]) => ({ c: V(x0, y, zo || 0), a: DOWN, u: XA, ax, az, n }));
-const mix = (a, b, t) => [[a, 1 - t], [b, t]];
+export const vRings = (list, x0, n) => list.map(([y, ax, az, zo]) => ({ c: V(x0, y, zo || 0), a: DOWN, u: XA, ax, az, n }));
+export const mix = (a, b, t) => [[a, 1 - t], [b, t]];
 
 // ── 질감 ──
 function denimTex() {

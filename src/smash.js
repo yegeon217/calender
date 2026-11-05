@@ -1999,6 +1999,7 @@ let preT=0;
 function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>{if(!G)return;if(document.getElementById("gCrush")){schedulePrewarm();return;}const pcs=G.pieces.filter(p=>!p.dead).map(p=>({W:p.W,H:p.H}));
   import("./crush.js").then(m=>m.prewarm(pcs)).catch(()=>{});
   setTimeout(()=>{if(G&&!G.palm)import("./palm.js").then(m=>m.prewarmPalm()).catch(()=>{});},1200);
+  setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./nuke.js").then(m=>m.prewarmNuke()).catch(()=>{});},3400);
   // 거대한 발 그림도 미리 (다음 한가할 때)
   const art=()=>{if(G&&!G.stomp)try{stompArt();}catch(e){console.error(e);}};window.requestIdleCallback?requestIdleCallback(art,{timeout:5000}):setTimeout(art,500);};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
