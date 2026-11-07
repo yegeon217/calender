@@ -54,7 +54,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .gfin #gStompBtn{color:#6b3f1d}
 .gfin #gPalmBtn{color:#6a2fa8}
 .gfin #gNukeBtn{color:#b8860b}
-@media (prefers-color-scheme:dark){.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}.gfin #gPalmBtn{color:#c9a2ff}.gfin #gNukeBtn{color:#ffd24a}}
+.gfin #gTariffBtn{color:#c0182c}
+.gfin #gMarsBtn{color:#c2521c}
+@media (prefers-color-scheme:dark){.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}.gfin #gPalmBtn{color:#c9a2ff}.gfin #gNukeBtn{color:#ffd24a}.gfin #gTariffBtn{color:#ff7a86}.gfin #gMarsBtn{color:#ff9a62}}
 /* 재질 */
 .gmat{position:relative;flex:none}
 .gpill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.78rem;font-weight:700;touch-action:manipulation}
@@ -175,9 +177,9 @@ html.grav-on[data-gtool="fire"],html.grav-on[data-gtool="water"],html.grav-on[da
 html.crush-on #stage{visibility:hidden}
 html.crush-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
 html.crush-on #sheet{display:none}
-#gCrush{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:45;touch-action:none}
+#gCrush{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:45;touch-action:none;object-fit:cover}
 #gCrushUI{position:fixed;inset:0;z-index:46;pointer-events:none}
-#gFx3d{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:17;pointer-events:none}
+#gFx3d{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:17;pointer-events:none;object-fit:cover}
 #gCrushUI .cr-scope{position:absolute;inset:0;width:100%;height:100%}
 #gCrushUI .cr-flash{position:absolute;inset:0;background:#fff8ec;opacity:0;transition:opacity .25s}
 #gCrushUI .cr-flash.on{opacity:.85;transition:none}
@@ -219,4 +221,4 @@ html.palm-on #chrome{opacity:.06;pointer-events:none;transition:opacity .8s}
 #gPalmT.on i{transition:transform .9s .15s cubic-bezier(.2,.8,.2,1);transform:scaleX(1)}
 #gPalmT.off{animation:none;opacity:0;transform:scale(1.12);transition:opacity .22s,transform .22s}
 
-html.nuke-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
+html.nuke-on #chrome,html.tariff-on #chrome,html.mars-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}

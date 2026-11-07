@@ -2000,6 +2000,8 @@ function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>
   import("./crush.js").then(m=>m.prewarm(pcs)).catch(()=>{});
   setTimeout(()=>{if(G&&!G.palm)import("./palm.js").then(m=>m.prewarmPalm()).catch(()=>{});},1200);
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./nuke.js").then(m=>m.prewarmNuke()).catch(()=>{});},3400);
+  setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./tariff.js").then(m=>m.prewarmTariff()).catch(()=>{});},5200);
+  setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./mars.js").then(m=>m.prewarmMars()).catch(()=>{});},7000);
   // 거대한 발 그림도 미리 (다음 한가할 때)
   const art=()=>{if(G&&!G.stomp)try{stompArt();}catch(e){console.error(e);}};window.requestIdleCallback?requestIdleCallback(art,{timeout:5000}):setTimeout(art,500);};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
@@ -2060,6 +2062,26 @@ async function beginNuke(){if(!G||crushing||nuking||G.stomp||G.palm)return;nukin
     stopSmash(true);
   }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
 document.getElementById("gNukeBtn").onclick=beginNuke;
+// 관세: 핵처럼 지금 화면의 조각을 3D로 넘기고 2D는 멈춤 (달력이 눕혀진 바닥이 됨) · 끝나면 달력을 새로
+async function beginTariff(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuking=true;audio();
+  cancelAnimationFrame(G.raf);G.paused=true;sStopAll();if(BZ3)BZ3.bz.hide();
+  const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
+  const onReset=OPT&&OPT.onReset;
+  try{const {startTariff}=await import("./tariff.js");
+    await startTariff({pieces,sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onDone:()=>{nuking=false;onReset&&onReset();}});
+    stopSmash(true);
+  }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
+document.getElementById("gTariffBtn").onclick=beginTariff;
+// 화성: 핵처럼 지금 화면의 조각을 3D로 넘기고 2D는 멈춤 (화면 전체가 달력 한 장이 되어 짜부됨) · 끝나면 달력을 새로
+async function beginMars(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuking=true;audio();
+  cancelAnimationFrame(G.raf);G.paused=true;sStopAll();if(BZ3)BZ3.bz.hide();
+  const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
+  const onReset=OPT&&OPT.onReset;
+  try{const {startMars}=await import("./mars.js");
+    await startMars({pieces,sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onDone:()=>{nuking=false;onReset&&onReset();}});
+    stopSmash(true);
+  }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
+document.getElementById("gMarsBtn").onclick=beginMars;
 document.getElementById("gStompBtn").onclick=()=>startStomp();
 document.getElementById("gPalmBtn").onclick=()=>startPalmFx();
 // 재질 고르기: 바꾸면 달력을 새 재질로 다시 그림
