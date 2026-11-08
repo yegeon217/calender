@@ -2003,6 +2003,7 @@ function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./tariff.js").then(m=>m.prewarmTariff()).catch(()=>{});},5200);
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./mars.js").then(m=>m.prewarmMars()).catch(()=>{});},7000);
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./blackhole.js").then(m=>m.prewarmBhole()).catch(()=>{});},8800);
+  setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./sun.js").then(m=>m.prewarmSun()).catch(()=>{});},12500);
   // 거대한 발 그림도 미리 (다음 한가할 때)
   const art=()=>{if(G&&!G.stomp)try{stompArt();}catch(e){console.error(e);}};window.requestIdleCallback?requestIdleCallback(art,{timeout:5000}):setTimeout(art,500);};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
@@ -2093,9 +2094,19 @@ async function beginBhole(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuki
     stopSmash(true);
   }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
 document.getElementById("gBholeBtn").onclick=beginBhole;
+// 태양: 화성처럼 지금 화면의 조각을 3D로 넘기고 2D는 멈춤 (달력 한 장이 맞아서 쇠구슬이 되고 태양까지 날아감) · 끝나면 달력을 새로
+async function beginSun(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuking=true;audio();
+  cancelAnimationFrame(G.raf);G.paused=true;sStopAll();if(BZ3)BZ3.bz.hide();
+  const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
+  const onReset=OPT&&OPT.onReset;
+  try{const {startSun}=await import("./sun.js");
+    await startSun({pieces,sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onDone:()=>{nuking=false;onReset&&onReset();}});
+    stopSmash(true);
+  }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
+document.getElementById("gSunBtn").onclick=beginSun;
 // 필살기 묶음: 파괴력·필살기·재질이 한 줄에 다 들어가면 그대로 나열 → 이름을 빼면 들어가면 아이콘만 → 그래도 안 되면(폰) "필살기" 버튼 하나로 묶어 누르면 목록
 (()=>{const H=document.documentElement,row=document.querySelector(".grow2"),fin=document.querySelector(".gfin"),btn=document.getElementById("gFinMore"),menu=document.getElementById("gFinMenu");if(!row||!fin||!btn)return;
-  const NOTE={gCrushBtn:"손으로 꾸겨 쇠공으로",gStompBtn:"위에서 쿵 밟기",gPalmBtn:"영역전개",gNukeBtn:"빨간 버튼 꾹",gTariffBtn:"트럼프에게 딱밤",gMarsBtn:"로드스터 타고 화성까지",gBholeBtn:"모든 걸 빨아들임"};
+  const NOTE={gCrushBtn:"손으로 꾸겨 쇠공으로",gStompBtn:"위에서 쿵 밟기",gPalmBtn:"영역전개",gNukeBtn:"빨간 버튼 꾹",gTariffBtn:"트럼프에게 딱밤",gMarsBtn:"로드스터 타고 화성까지",gBholeBtn:"모든 걸 빨아들임",gSunBtn:"싸대기로 쇠구슬 → 행성 관통"};
   const list=[...fin.querySelectorAll("button")];
   menu.innerHTML="<p>필살기</p>"+list.map(b=>'<button role="menuitem" data-go="'+b.id+'">'+b.querySelector("svg").outerHTML+"<span>"+((b.querySelector(".lbl")||{}).textContent||b.getAttribute("aria-label"))+"<small>"+(NOTE[b.id]||"")+"</small></span></button>").join("");
   const tint=()=>menu.querySelectorAll("[data-go]").forEach(m=>{m.querySelector("svg").style.color=getComputedStyle(document.getElementById(m.dataset.go)).color;});

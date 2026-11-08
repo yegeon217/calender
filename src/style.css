@@ -57,6 +57,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .gfin #gTariffBtn{color:#c0182c}
 .gfin #gMarsBtn{color:#c2521c}
 .gfin #gBholeBtn{color:#4a35c8}
+.gfin #gSunBtn{color:#d98a00}
 /* 필살기 묶음: 한 줄에 다 안 들어가면 버튼 하나로 묶고 누르면 목록 */
 .gfmore{position:relative;flex:none;display:none}
 html.fin-pack .gfin{display:none}
@@ -73,7 +74,7 @@ html.fin-icons .gfin button{padding:5px 8px}
 #gFinMore[aria-expanded="true"] .chev{transform:rotate(180deg)}
 #gFinMenu{right:auto;left:50%;transform:translateX(-50%);min-width:210px}
 #gFinMenu button svg{width:20px;height:20px;flex:none}
-@media (prefers-color-scheme:dark){.gfin #gBholeBtn{color:#ad9fff}#gFinMore{color:#c79bff}.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}.gfin #gPalmBtn{color:#c9a2ff}.gfin #gNukeBtn{color:#ffd24a}.gfin #gTariffBtn{color:#ff7a86}.gfin #gMarsBtn{color:#ff9a62}}
+@media (prefers-color-scheme:dark){.gfin #gSunBtn{color:#ffc24a}.gfin #gBholeBtn{color:#ad9fff}#gFinMore{color:#c79bff}.gfin #gCrushBtn{color:#f0b47a}.gfin #gStompBtn{color:#e8b98a}.gfin #gPalmBtn{color:#c9a2ff}.gfin #gNukeBtn{color:#ffd24a}.gfin #gTariffBtn{color:#ff7a86}.gfin #gMarsBtn{color:#ff9a62}}
 /* 재질 */
 .gmat{position:relative;flex:none}
 .gpill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.78rem;font-weight:700;touch-action:manipulation}
@@ -238,4 +239,4 @@ html.palm-on #chrome{opacity:.06;pointer-events:none;transition:opacity .8s}
 #gPalmT.on i{transition:transform .9s .15s cubic-bezier(.2,.8,.2,1);transform:scaleX(1)}
 #gPalmT.off{animation:none;opacity:0;transform:scale(1.12);transition:opacity .22s,transform .22s}
 
-html.nuke-on #chrome,html.tariff-on #chrome,html.mars-on #chrome,html.bhole-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}
+html.nuke-on #chrome,html.tariff-on #chrome,html.mars-on #chrome,html.bhole-on #chrome,html.sun-on #chrome{opacity:0;pointer-events:none;transition:opacity .35s}

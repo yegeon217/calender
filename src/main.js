@@ -97,7 +97,7 @@ async function boot() {
 }
 
 // 앱으로 돌아왔을 때: 설정에서 권한을 켰으면 불러오고, 다른 앱에서 일정이 바뀌었으면 다시 그림
-const crushOn = () => /\b(crush|nuke|tariff|mars|bhole)-on\b/.test(document.documentElement.className);   // 화면 전체를 쓰는 장면 중에는 다시 그리지 않음 (끝나면 새 크기로 다시 그림)
+const crushOn = () => /\b(crush|nuke|tariff|mars|bhole|sun)-on\b/.test(document.documentElement.className);   // 화면 전체를 쓰는 장면 중에는 다시 그리지 않음 (끝나면 새 크기로 다시 그림)
 document.addEventListener("visibilitychange", async () => {
   if (document.hidden || !native || crushOn()) return;
   if (!$("gate").hidden) {
