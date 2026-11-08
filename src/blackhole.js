@@ -265,6 +265,8 @@ async function runBhole(o) {
   const daySky = buildDaySky(); daySky.U.uUp.value.copy(EDIR).negate(); daySky.U.uSun.value.copy(SUNF); daySky.mesh.visible = false; scene.add(daySky.mesh);
   const clouds = []; for (let i = 0; i < 16; i++) { const c = cloudSprite(noise), s = lerp(-8, 60, i / 15) + rnd(-3, 3), fg = false, z = -rnd(14, 75), lat = (i % 2 ? 1 : -1) * rnd(6, 10 + Math.abs(z) * 0.35); c.mesh.position.copy(FD).multiplyScalar(s).addScaledVector(FU, lat).add(V(0, 0, z)); c.mesh.scale.setScalar(rnd(6, 16)); c.mesh.visible = false; scene.add(c.mesh); clouds.push({ c, s, fg }); }
   const plasma = glowPoints(64, PS, 1.6), heat = streaks(64); scene.add(plasma.pts, heat.lines); plasma.pts.visible = heat.lines.visible = false;
+  // 좁은 세로 화면(폰)은 달력이 화면 폭을 거의 다 차지해 조각이 금방 화면 밖으로 나감 → 화면이 좁을수록 카메라를 뒤로 빼서 넓게 보여 줌
+  const ZF = clamp(1 + (1 - aspect) * 0.75, 1, 1.42);
   const AN = V(), GQ = new THREE.Quaternion(), QF = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.14, -0.52, -0.1)), keyDir = SUNF;
   let flight = null, Vc = 0, lastSmash = 0, schedI = 0;
   const inP = (P, x, y) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) if ((P[i][1] > y) !== (P[j][1] > y) && x < ((P[j][0] - P[i][0]) * (y - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) c = !c; return c; };
@@ -281,7 +283,7 @@ async function runBhole(o) {
     while (tt < T.barE) { const u = (tt - S0 - 5.42) / (T.barE - S0 - 5.42), k = ks[i % ks.length]; sched.push([tt, k, k === "rock" ? rnd(0.18, 0.3) : k === "star" ? rnd(0.24, 0.32) : k === "uranus" ? 0.58 : rnd(0.32, 0.5), lerp(18, 32, u)]); i++; tt += lerp(0.13, 0.055, u); } }
   // 천체는 카메라 쪽 왼쪽 위(화면 구석 바로 밖)에서 나와 달력 앞면으로 날아들어 맞히고, 그대로 뚫고 오른쪽 아래 먼 곳으로 지나감
   function spawnBody(kind, R, speed) { const f = pool.find(q => !q.on && !q.used && q.kind === kind) || pool.find(q => !q.on && !q.used); if (!f) return null; f.on = true; f.used = true; f.R = R; f.b.group.scale.setScalar(R); f.b.group.visible = true;
-    f.b.U.uFade.value = 1; camNow(); const th = Math.tan(cam.fov * Math.PI / 360), Dd = rnd(4.4, 5.3) + R, Rv = R * (f.b.isStar ? 2.6 : 1.1), st = cam.localToWorld(V(-(th * aspect * Dd + Rv * Math.hypot(1, th * aspect) + 0.03), rnd(0.3, 1.0) * th * Dd, -Dd)).sub(AN);
+    f.b.U.uFade.value = 1; camNow(); const th = Math.tan(cam.fov * Math.PI / 360), Dd = rnd(4.4, 5.3) * ZF + R, Rv = R * (f.b.isStar ? 2.6 : 1.1), st = cam.localToWorld(V(-(th * aspect * Dd + Rv * Math.hypot(1, th * aspect) + 0.03), rnd(0.3, 1.0) * th * Dd, -Dd)).sub(AN);
     const alive = shards.S.filter(s => s.alive); let tg; if (alive.length) { let tot = 0; for (const s of alive) tot += s.area; let r = Math.random() * tot, pick = alive[0]; for (const s of alive) { r -= s.area; if (r <= 0) { pick = s; break; } }
       let lx = pick.c[0], ly = pick.c[1]; for (let g = 0; g < 12; g++) { const px = pick.c[0] + rnd(-0.4, 0.4) * Math.sqrt(pick.area), py = pick.c[1] + rnd(-0.4, 0.4) * Math.sqrt(pick.area); if (inP(pick.P, px, py)) { lx = px; ly = py; break; } }
       tg = V(lx - pick.c[0], ly - pick.c[1], 0).applyQuaternion(pick.q).add(pick.p).sub(AN); const th = st.distanceTo(tg) / speed; tg.addScaledVector(tv.copy(pick.v).addScaledVector(FD, -Vc), th); } else tg = V(rnd(-0.3, 0.3), rnd(-0.6, 0.6), 0).applyQuaternion(GQ);
@@ -321,7 +323,7 @@ async function runBhole(o) {
     shards.U.uBack.value.copy(FD); shards.U.uBackC.value.setRGB(lerp(0.3, 2.4, brk), lerp(0.42, 0.9, brk), lerp(0.7, 0.3, brk)).multiplyScalar(sp * (t < T.spc ? 1 : 0.35 + 0.65 * brk)); shards.U.uAmb.value.setRGB(0.07, 0.08, 0.11).multiplyScalar(t < T.brk ? 1.8 : 1);
     shards.step(dt, (s, dt) => { s.v.addScaledVector(tv.copy(FD).multiplyScalar(Vc).sub(s.v), Math.min(1, dt * 0.85)); s.w.multiplyScalar(Math.exp(-dt * 0.35)); if (s.burn > 0) s.burn = Math.min(1, s.burn + dt * 0.3); });
     // 카메라: 정면(화면 그대로) → 비스듬히 옆에서 따라가며 달력이 오른쪽 아래에 보이게
-    if (t < T.rev) { const ofs = V(0, 0, Dm).lerp(V(-0.5 * SW, 0.28 * SH, 1.8 * Dm), k), lk = V().lerp(V(-0.2 * SW - 0.14 * SW * seg(t, T.spc, T.rev), 0.13 * SH + 0.05 * SH * seg(t, T.spc, T.rev), 0), k); look(AN.clone().add(ofs), AN.clone().add(lk)); }
+    if (t < T.rev) { const ofs = V(0, 0, Dm).lerp(V(-0.5 * SW, 0.28 * SH, 1.8 * Dm).multiplyScalar(ZF), k), lk = V().lerp(V(-0.2 * SW - 0.14 * SW * seg(t, T.spc, T.rev), 0.13 * SH + 0.05 * SH * seg(t, T.spc, T.rev), 0), k); look(AN.clone().add(ofs), AN.clone().add(lk)); }
     // 구름 (대기 속) · 지구 (돌파한 뒤 뒤쪽 위) · 우주 먼지 줄
     const alt = sstep(seg(t, T.L0 + 0.4, T.brk + 0.35)); daySky.U.uAlt.value = alt; daySky.U.uVis.value = 1 - sstep(seg(t, T.brk + 0.05, T.brk + 0.55));
     for (const q of clouds) { q.c.mesh.visible = t >= T.L0 - 0.2 && t < T.brk + 0.5; if (!q.c.mesh.visible) continue; q.c.U.uLit.value = lerp(1.15, 0.55, alt); q.c.U.uA.value = 0.85 * (1 - seg(t, T.brk, T.brk + 0.45)) * (1 - clamp((q.s - 30) / 45, 0, 0.6)); }
