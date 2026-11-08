@@ -2002,6 +2002,7 @@ function schedulePrewarm(){clearTimeout(preT);preT=setTimeout(()=>{const go=()=>
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./nuke.js").then(m=>m.prewarmNuke()).catch(()=>{});},3400);
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./tariff.js").then(m=>m.prewarmTariff()).catch(()=>{});},5200);
   setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./mars.js").then(m=>m.prewarmMars()).catch(()=>{});},7000);
+  setTimeout(()=>{if(G&&!G.palm&&!nuking)import("./blackhole.js").then(m=>m.prewarmBhole()).catch(()=>{});},8800);
   // 거대한 발 그림도 미리 (다음 한가할 때)
   const art=()=>{if(G&&!G.stomp)try{stompArt();}catch(e){console.error(e);}};window.requestIdleCallback?requestIdleCallback(art,{timeout:5000}):setTimeout(art,500);};
   window.requestIdleCallback?requestIdleCallback(go,{timeout:4000}):go();},1500);}
@@ -2082,6 +2083,32 @@ async function beginMars(){if(!G||crushing||nuking||G.stomp||G.palm)return;nukin
     stopSmash(true);
   }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
 document.getElementById("gMarsBtn").onclick=beginMars;
+// 블랙홀: 화성처럼 지금 화면의 조각을 3D로 넘기고 2D는 멈춤 (우주로 날아갔다가 달력으로 순간이동해 돌아옴) · 끝나면 달력을 새로
+async function beginBhole(){if(!G||crushing||nuking||G.stomp||G.palm)return;nuking=true;audio();
+  cancelAnimationFrame(G.raf);G.paused=true;sStopAll();if(BZ3)BZ3.bz.hide();
+  const pieces=G.pieces.filter(p=>!p.dead).map(p=>({tex:p.tex,W:p.W,H:p.H,cx:p.f.cx,cy:p.f.cy,th:p.f.th,alpha:p.alpha,colors:p.colors}));
+  const onReset=OPT&&OPT.onReset;
+  try{const {startBhole}=await import("./blackhole.js");
+    await startBhole({pieces,sfx:()=>{const c=audio();return c?{c,out:AU.master,noise:AU.noise}:null;},onDone:()=>{nuking=false;onReset&&onReset();}});
+    stopSmash(true);
+  }catch(e){console.error(e);nuking=false;if(G){G.paused=false;G.raf=requestAnimationFrame(loop);}}}
+document.getElementById("gBholeBtn").onclick=beginBhole;
+// 필살기 묶음: 파괴력·필살기·재질이 한 줄에 다 들어가면 그대로 나열 → 이름을 빼면 들어가면 아이콘만 → 그래도 안 되면(폰) "필살기" 버튼 하나로 묶어 누르면 목록
+(()=>{const H=document.documentElement,row=document.querySelector(".grow2"),fin=document.querySelector(".gfin"),btn=document.getElementById("gFinMore"),menu=document.getElementById("gFinMenu");if(!row||!fin||!btn)return;
+  const NOTE={gCrushBtn:"손으로 꾸겨 쇠공으로",gStompBtn:"위에서 쿵 밟기",gPalmBtn:"영역전개",gNukeBtn:"빨간 버튼 꾹",gTariffBtn:"트럼프에게 딱밤",gMarsBtn:"로드스터 타고 화성까지",gBholeBtn:"모든 걸 빨아들임"};
+  const list=[...fin.querySelectorAll("button")];
+  menu.innerHTML="<p>필살기</p>"+list.map(b=>'<button role="menuitem" data-go="'+b.id+'">'+b.querySelector("svg").outerHTML+"<span>"+((b.querySelector(".lbl")||{}).textContent||b.getAttribute("aria-label"))+"<small>"+(NOTE[b.id]||"")+"</small></span></button>").join("");
+  const tint=()=>menu.querySelectorAll("[data-go]").forEach(m=>{m.querySelector("svg").style.color=getComputedStyle(document.getElementById(m.dataset.go)).color;});
+  const open=v=>{menu.hidden=!v;btn.setAttribute("aria-expanded",v?"true":"false");if(v){tint();menu.style.marginLeft="0px";const r=menu.getBoundingClientRect(),pad=8;let dx=0;if(r.left<pad)dx=pad-r.left;else if(r.right>innerWidth-pad)dx=innerWidth-pad-r.right;menu.style.marginLeft=dx+"px";}};
+  btn.onclick=()=>open(menu.hidden);
+  menu.querySelectorAll("[data-go]").forEach(m=>m.onclick=()=>{open(false);document.getElementById(m.dataset.go).click();});
+  addEventListener("pointerdown",e=>{if(!menu.hidden&&!e.target.closest(".gfmore"))open(false);},true);
+  addEventListener("keydown",e=>{if(e.key==="Escape")open(false);});
+  // 한 줄인지: 줄 안에 보이는 것들의 위쪽 끝이 다 같으면 한 줄
+  const oneRow=()=>{const k=[...row.children].filter(e=>e.offsetParent&&!e.hidden);if(!k.length)return true;const tops=k.map(e=>e.getBoundingClientRect().top);return Math.max(...tops)-Math.min(...tops)<4;};
+  const fit=()=>{H.classList.remove("fin-pack","fin-icons");if(oneRow()){open(false);return;}H.classList.add("fin-icons");if(oneRow()){open(false);return;}H.classList.remove("fin-icons");H.classList.add("fin-pack");};
+  let q=0;const later=()=>{cancelAnimationFrame(q);q=requestAnimationFrame(fit);};
+  addEventListener("resize",later);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(later);fit();})();
 document.getElementById("gStompBtn").onclick=()=>startStomp();
 document.getElementById("gPalmBtn").onclick=()=>startPalmFx();
 // 재질 고르기: 바꾸면 달력을 새 재질로 다시 그림
