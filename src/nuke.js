@@ -9,12 +9,13 @@ import { fx3d } from "./fx3d.js";
 import { loadHand, preloadHand } from "./hand.js";
 import { buildLeader } from "./leader.js";
 import { buildCloud, cloudAt } from "./cloudvol.js";
+import { prepSaka, runSaka, preloadSaka } from "./nuke-saka.js";
 import { clamp, lerp, rnd, seg, sstep, eOut, eIn, eInOut, V, buzz, vnoise } from "./fx-util.js";
 
 let cloudP = null, cloudX = null, leaderP = null;
 const getLeader = () => leaderP || (leaderP = Promise.all([loadHand(new THREE.MeshStandardMaterial()), loadHand(new THREE.MeshStandardMaterial())]).then(([HR, HL]) => buildLeader({ hands: [HR, HL] })).catch(e => { leaderP = null; throw e; }));
 const getCloud = X => { if (!cloudP || cloudX !== X) { cloudX = X; cloudP = buildCloud(X); } return cloudP; };
-export function prewarmNuke() { preloadHand(); getLeader().catch(() => {}); getCloud(fx3d()).then(c => c.warm()).catch(() => {}); }
+export function prewarmNuke() { preloadSaka(); preloadHand(); getLeader().catch(() => {}); }
 
 const T = { pull: 1.6, walk0: 0.8, walk1: 2.45, rise0: 1.15, rise1: 2.0, g1a: 2.5, g1on: 2.82, g1off: 3.28, g1b: 3.58, f1a: 3.6, f1h: 4.45, f1b: 4.72, f2a: 4.8, f2h: 5.75, f2b: 6.02, g2a: 6.08, g2on: 6.38, g2off: 6.8, g2b: 7.08, pr0: 7.1, pr1: 7.42, launch: 7.6, imp: 10.1, end: 17.8 };
 
@@ -95,6 +96,7 @@ void main(){ vec3 d = normalize(vD); float y = d.y; vec3 c = mix(uHor, uTop, pow
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const m = new THREE.Mesh(g, backM); m.castShadow = m.receiveShadow = true; m.frustumCulled = false; m.position.set(x0 + (i + 0.5) * tw - vw / 2, vh / 2 - (y0 + (j + 0.5) * thh), -19); m.scale.z = 0.02; wallG.add(m); bricks.push({ m, dz: 9, z0: -15, v: V(), w: V(), vap: false, delay: 0, free: false }); } }
   fg(wallG);
   // ── 그 사람 · 빨간 버튼 ──
+  const F = await prepSaka(dark);
   const K = await getLeader(), HU = vh * 0.285; if (import.meta.env.DEV) window.__nukeK = K; K.root.rotation.order = "XYZ"; K.root.rotation.set(0, 0, 0); K.show("a"); K.tint(new THREE.Color(1, 1, 1), 0); K.root.scale.setScalar(HU); scene.add(K.root); fg(K.root); K.root.visible = false;
   const camEnd = V(vw * 0.08, vh * 0.1, D * 1.5), lookEnd = V(vw * 0.11, -vh * 0.15, 0);
   const spot = V(vw * 0.36, Y0, D * 0.5), from = V(vw * 1.75, Y0, D * 0.42), yawEnd = Math.atan2(camEnd.x - spot.x, camEnd.z - spot.z) - 0.42;
@@ -136,11 +138,10 @@ void main(){ vec3 d = normalize(vD); float y = d.y; vec3 c = mix(uHor, uTop, pow
   const ov = (css) => { const e = document.createElement("div"); e.style.cssText = "position:fixed;inset:0;z-index:19;pointer-events:none;opacity:0;" + css; document.body.append(e); return e; };
   const flash = ov("background:#fffaf0"), dustV = ov("background:radial-gradient(ellipse at 50% 60%,rgba(120,96,70,.55),rgba(70,54,40,.95))"), fade = ov("background:#000");
 
-  const cl = await getCloud(X), E = V(0, Y0, -2), HIT = V(0, Y0 + vh * 0.46, 8), CS = vh * 1.35, snd = makeSound(o.sfx);
+  const cl = null, E = V(0, Y0, -2), HIT = V(0, Y0 + vh * 0.46, 8), CS = vh * 1.35, snd = makeSound(o.sfx);
   // 충격파가 어떤 거리에 닿는 시각 (cloudAt의 Wr과 같은 식)
   const arrive = d => { const x = (d / CS - 0.2) / 2.4; return x >= 0.99 ? 3.4 : -0.75 * Math.log(1 - Math.max(0, x)); };
-  renderer.compile(scene, cam); cl.warm();
-  X.use("nuke", 3); document.documentElement.classList.add("nuke-on");
+  renderer.compile(scene, cam);
   let t = 0, last = performance.now(), raf = 0, ended = false, impT = Infinity, face = "a", shake = 0, roll = 0, rollV = 0, blowFired = false, kimHit = Infinity, kSpin = 0, kYaw = 0, kLand = 0, kLandT = 0, conV = null, conW = 0, aP = null, aB = 0, kN0 = null, kH0 = null;
   const HQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, 0, 0.12)), Q0 = new THREE.Quaternion(), FG_BTN = [0.95, 0.75, 0.02], FG_GLS = [0.3, 0.42, 0.22], FG_REST = [0.34, 0.25, 0.34], aF = FG_REST.slice();
   const tintC = new THREE.Color(1, 0.62, 0.38), charC = new THREE.Color(0x2b2520), once = new Set(), at = (k, fn) => { if (!once.has(k)) { once.add(k); fn(); } };
@@ -148,8 +149,18 @@ void main(){ vec3 d = normalize(vD); float y = d.y; vec3 c = mix(uHor, uTop, pow
   const misAt = (u, out = V()) => { const a = (1 - u) * (1 - u), b = 2 * u * (1 - u), c = u * u; return out.copy(M0).multiplyScalar(a).addScaledVector(M1, b).addScaledVector(HIT, c); };
   const ease = (a, b, x) => sstep(seg(x, a, b));
 
+  let SK = null; const ctx = { X, scene, cam, K, con, parts, BTN, HU, Y0, vw, vh, D, renderer, wallG, bricks, sky, skyU, ground, gMat, fadeU, hemi, sun, smoke, spark, makePts, puff, glw, mis, plume, glare, MS, chips, CH, fade, flash, o, dark, lookNow: lookP,
+    getArmBase: () => ({ high: BTN.clone().add(V(-0.015, 0.36, -0.06)), press: BTN.clone().add(V(-0.012, 0.165, -0.03)) }) };
+  SK = runSaka(ctx, F); K.root.visible = true; await SK.warm(); K.root.visible = false; K.show("a");
+  X.use("nuke", 3); document.documentElement.classList.add("nuke-on");
   function frame(now) {
     let dt = Math.min(0.05, (now - last) / 1000); last = now;
+    // 마지막 누르기부터는 사카밤바스피스 장면 (nuke-saka.js)
+    if (t >= T.pr0) { if (!SK) SK = runSaka(ctx, F); let rem = dt * (import.meta.env.DEV && window.__nukeSpeed || 1), done = false;
+      if (import.meta.env.DEV && window.__sakaStop != null) rem = Math.min(rem, Math.max(0, window.__sakaStop - SK.t));
+      do { const d = Math.min(0.05, rem); rem -= d; smoke.step(d); spark.step(d); done = SK.step(d, rem > 1e-6); } while (rem > 1e-6 && !done);
+      if (done) { finish(); return; } raf = requestAnimationFrame(frame); return; }
+    if (import.meta.env.DEV && window.__nukeSpeed) dt = Math.min(0.2, dt * window.__nukeSpeed);
     if (import.meta.env.DEV && window.__nukeStop != null) dt = Math.max(0, Math.min(dt, window.__nukeStop - t));
     t += dt; if (import.meta.env.DEV) window.__nukeT = t;
     // ── 3D로: 칸에 두께 · 하늘·땅 · 시점이 뒤로 ──
@@ -251,7 +262,7 @@ void main(){ vec3 d = normalize(vD); float y = d.y; vec3 c = mix(uHor, uTop, pow
     if (chips.visible) { for (let i = 0; i < NCH; i++) { const c = CH[i]; if (c.s.x <= 0) { chips.setMatrixAt(i, m4.makeScale(0, 0, 0)); continue; } c.v.y -= 1900 * dt; c.v.multiplyScalar(Math.exp(-0.4 * dt)); c.p.addScaledVector(c.v, dt); c.r.addScaledVector(c.w, dt); if (c.p.y < Y0 + 3) { c.p.y = Y0 + 3; c.v.y *= -0.25; c.v.x *= 0.6; c.v.z *= 0.6; c.w.multiplyScalar(0.5); } chips.setMatrixAt(i, m4.compose(c.p, q4.setFromEuler(e4.set(c.r.x, c.r.y, c.r.z)), c.s)); } chips.instanceMatrix.needsUpdate = true; }
     if (s > T.end - T.imp - 1.4) fade.style.opacity = String(seg(s, T.end - T.imp - 1.4, T.end - T.imp));
   }
-  function finish() { cancelAnimationFrame(raf); if (ended) return; ended = true; X.drop("nuke"); document.documentElement.classList.remove("nuke-on"); renderer.autoClear = true; renderer.shadowMap.autoUpdate = true; scene.remove(K.root);
+  function finish() { cancelAnimationFrame(raf); if (ended) return; ended = true; X.drop("nuke"); document.documentElement.classList.remove("nuke-on"); renderer.autoClear = true; renderer.shadowMap.autoUpdate = true; K.root.removeFromParent(); K.root.visible = true; K.show("a"); K.tint(new THREE.Color(1, 1, 1), 0);
     scene.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material) [].concat(m.material).forEach(x => { if (x.map && x.map !== K.M) x.map.dispose(); x.dispose(); }); }); texs.forEach(x => x.dispose());
     flash.remove(); dustV.remove(); setTimeout(() => { fade.style.transition = "opacity .6s"; fade.style.opacity = "0"; setTimeout(() => fade.remove(), 700); }, 60); o.onDone && o.onDone(); }
   raf = requestAnimationFrame(frame);
