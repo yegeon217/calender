@@ -221,6 +221,26 @@ html.crush-on #sheet{display:none}
 @keyframes domIn{0%{opacity:0;transform:scale(1.6)}12%{opacity:.35}28%{opacity:1;transform:scale(.97)}
   36%{transform:translate(3px,-2px) scale(.98)}44%{transform:translate(-3px,2px) scale(.99)}52%{transform:translate(2px,1px)}100%{opacity:1;transform:none}}
 @keyframes domPress{from{transform:scale(1)}to{transform:scale(1.045)}}
+/* 영역 이름 · 영역마다 빛깔 */
+#gCrushUI .cr-dom em{display:block;margin-top:14px;font-style:normal;font-size:clamp(17px,5.2vw,34px);font-weight:900;letter-spacing:.34em;padding-left:.34em;color:#ffe9e2;
+  text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 18px var(--dg,rgba(255,40,20,.7))}
+#gCrushUI .cr-dom em:empty{display:none}
+#gCrushUI .cr-dom em s{display:block;text-decoration:none;font-size:.46em;letter-spacing:.6em;padding-left:.6em;margin-top:6px;opacity:.8;font-weight:700}
+#gCrushUI .cr-dom[data-k="gojo"]{--dc:#7fd8ff;--dg:rgba(80,170,255,.75)}
+#gCrushUI .cr-dom[data-k="mahito"]{--dc:#8ff0c8;--dg:rgba(60,230,170,.7)}
+#gCrushUI .cr-dom[data-k="jogo"]{--dc:#ffb340;--dg:rgba(255,130,20,.8)}
+#gCrushUI .cr-dom[data-k] small{color:var(--dc);text-shadow:0 0 12px var(--dg)}
+#gCrushUI .cr-dom[data-k] b{text-shadow:0 0 1px #000,0 5px 0 rgba(0,0,0,.55),0 8px 28px rgba(0,0,0,.9),0 0 46px var(--dg)}
+#gCrushUI .cr-dom[data-k] i{background:linear-gradient(90deg,transparent,var(--dc) 30%,#fff 50%,var(--dc) 70%,transparent)}
+/* 저격: 직접 조준 (끌어서 겨누고 톡 치면 발사) */
+#gCrushUI .cr-aim{position:absolute;inset:0;pointer-events:auto;touch-action:none;cursor:crosshair;opacity:0;transition:opacity .35s}
+#gCrushUI .cr-aim.on{opacity:1}
+#gCrushUI .cr-hint{position:absolute;left:0;right:0;top:calc(14px + var(--it,0px));margin:0;text-align:center;font-size:clamp(13px,3.6vw,17px);font-weight:700;color:#fff;
+  letter-spacing:.04em;text-shadow:0 1px 3px rgba(0,0,0,.9);pointer-events:none;transition:color .2s,transform .2s}
+#gCrushUI .cr-hint.miss{color:#ff6a50;transform:scale(1.08)}
+#gCrushUI .cr-fire{position:absolute;right:calc(22px + var(--ir,0px));bottom:calc(26px + var(--ib,0px));width:74px;height:74px;border-radius:50%;border:3px solid rgba(255,255,255,.85);
+  background:radial-gradient(circle,rgba(255,60,40,.95) 0 22%,rgba(255,60,40,.25) 23% 60%,rgba(0,0,0,.25) 61%);box-shadow:0 0 0 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.5);cursor:pointer;touch-action:none}
+#gCrushUI .cr-fire:active{transform:scale(.92)}
 
 /* 아래부터: 그을린 자국 → 붙어 있는 칸 → 떨어진 조각 → 효과 */
 #gDecal,#gWall,#gFree,#gFx{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none}

@@ -7,7 +7,21 @@ import { loadHand, preloadHand } from "./hand.js";
 import { bakeCrumple, sampleCrumple, BALL_R } from "./crumple.js";
 import { clamp, lerp, rnd, seg, sstep, eOut, eIn, eInOut, eBack, V, buzz, noiseTex, radialTex } from "./fx-util.js";
 import { buildDomain } from "./domain.js";
+import { buildGojo } from "./domain-gojo.js";
+import { buildMahito } from "./domain-mahito.js";
+import { buildJogo } from "./domain-jogo.js";
 import { buildKick } from "./kick.js";
+
+// 영역전개 고르기: 넷을 섞은 꾸러미에서 하나씩 꺼냄 → 바로 전 것은 절대 다시 안 나오고, 한 바퀴 돌기 전엔 겹치지 않음 (앱을 껐다 켜도 이어짐)
+function nextDomain(keys) {
+  let bag = [], last = null;
+  try { const v = JSON.parse(localStorage.getItem("crush-dom-bag") || "{}"); bag = (v.bag || []).filter(k => keys.includes(k)); last = v.last || null; } catch (e) {}
+  if (!bag.length) { bag = keys.slice(); for (let i = bag.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [bag[i], bag[j]] = [bag[j], bag[i]]; } if (bag[bag.length - 1] === last) [bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]]; }
+  let k = bag.pop(); if (k === last && bag.length) { const k2 = bag.pop(); bag.push(k); k = k2; }
+  nextDomain.mem = { bag, last: k };
+  try { localStorage.setItem("crush-dom-bag", JSON.stringify(nextDomain.mem)); } catch (e) {}
+  return k;
+}
 
 // ── 소리 (WebAudio 합성) ──
 function makeSound(get) {
@@ -285,8 +299,10 @@ async function prepare() {
   const spGeo = new THREE.BufferGeometry(); spGeo.setAttribute("position", new THREE.BufferAttribute(spPos, 3)); spGeo.setAttribute("color", new THREE.BufferAttribute(spCol, 4));
   const spLines = new THREE.LineSegments(spGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })); spLines.frustumCulled = false; scene.add(spLines);
 
-  // ── 영역전개 (박살 낸 뒤 "다음") ──
-  const dom = buildDomain({ scene, cam, renderer, vw, vh, D, S, K, PALM_Z, FLOOR, R: hand, L: hand2, mir, hemi, key, rim, frags, floorM });
+  // ── 영역전개 (박살 내고 달려간 뒤 바로) · 손 모양 넷 중 하나를 무작위로 ──
+  const domC = { scene, cam, renderer, vw, vh, D, S, K, PALM_Z, FLOOR, R: hand, L: hand2, mir, hemi, key, rim, frags, floorM };
+  const dom = buildDomain(domC);
+  const DOMS = { ryomen: dom, gojo: buildGojo(domC), mahito: buildMahito(domC), jogo: buildJogo(domC) };
 
   // ── 쇠공을 차고 저격하는 연출 (사람 손도 같은 손 모델) ──
   const [H3, H4] = await Promise.all([loadHand(skin), loadHand(skin)]); mark("runner hands");
@@ -316,7 +332,7 @@ async function prepare() {
   const dummyCv = document.createElement("canvas"); dummyCv.width = dummyCv.height = 4;
   // 불투명·반투명(지난 날짜 칸) 종이는 셰이더가 따로라 둘 다
   const dummies = [1, 0.5].map((alpha, i) => { const d = makePaper({ tex: dummyCv, W: 40, H: 40, alpha }, { nx: 2, ny: 2, w: 1, h: 1, keys: [] }, backColor); d.g.position.set(i * 50, 0, 10); scene.add(d.g); return d; });
-  const later = [ball, frags, flakes, floorM, glint, flashSpr, spLines, ink, leakSpr, rays, mir, ...dom.warm, ...kickFx.warm].filter(o => !o.visible);
+  const later = [ball, frags, flakes, floorM, glint, flashSpr, spLines, ink, leakSpr, rays, mir, ...Object.values(DOMS).flatMap(d => d.warm), ...kickFx.warm].filter(o => !o.visible);
   later.forEach(o => (o.visible = true)); leak.intensity = 1; boomLight.intensity = 1;
   hand.root.position.set(0, 0, HZ); mark("built");
   try { if (renderer.compileAsync) await renderer.compileAsync(scene, cam); else renderer.compile(scene, cam); } catch (e) {}
@@ -338,7 +354,10 @@ async function prepare() {
   // 화면 위 글자·버튼
   const ui = document.createElement("div"); ui.id = "gCrushUI";
   ui.innerHTML = `<div class="cr-flash"></div><div class="cr-inv"></div>`
-    + `<div class="cr-dom" hidden><small>領域展開</small><b>료이키 텐카이</b><i></i></div><button class="cr-again" hidden>다음</button>`;
+    + `<div class="cr-dom" hidden><small>領域展開</small><b>료이키 텐카이</b><em></em><i></i></div><button class="cr-again" hidden>다음</button>`;
+  const DOM_NAME = { ryomen: ["복마어주자", "伏魔御廚子"], gojo: ["무량공처", "無量空處"], mahito: ["자폐원돈과", "自閉圓頓裹"], jogo: ["개관철위산", "蓋棺鐵圍山"] };
+  const domK = (import.meta.env.DEV && window.__domK) || nextDomain(Object.keys(DOMS)), curDom = DOMS[domK];
+  { const de = ui.querySelector(".cr-dom"); if (domK !== "ryomen") de.dataset.k = domK; de.querySelector("em").innerHTML = `${DOM_NAME[domK][0]}<s>${DOM_NAME[domK][1]}</s>`; }
   document.body.append(ui);
   const flash = ui.querySelector(".cr-flash"), again = ui.querySelector(".cr-again");
   uiFlash = () => { flash.classList.add("on"); setTimeout(() => flash.classList.remove("on"), 90); };
@@ -420,7 +439,7 @@ async function prepare() {
   // 손이 받는 충격: 종이가 도착할 때마다 살짝 밀렸다가 탄성 있게 돌아옴 (용수철)
   const recoil = { z: 0, vz: 0, rx: 0, vrx: 0, y: 0, vy: 0 };
   const kick = (z, rx, y = 0) => { recoil.vz += z; recoil.vrx += rx; recoil.vy += y; };
-  const st = { get phase() { return phase; }, ball, cam, vw, vh, rb, T, debugT: null, dom };
+  const st = { get phase() { return phase; }, ball, cam, vw, vh, rb, T, debugT: null, dom: curDom, domK, DOMS };
   if (import.meta.env.DEV) window.__crush = st;
   const hit = new Set(), once = (k, fn) => { if (!hit.has(k)) { hit.add(k); fn(); } };
 
@@ -514,7 +533,7 @@ async function prepare() {
     if (t >= T.glow + 0.3 && !ball.visible) ball.visible = true;
     if (!ball.visible) return;
     if (t < T.lift) { ball.rotation.y = t * 1.5; glint.material.opacity = 0; ball.position.set(0, 0, 0); return; }
-    if (phase === "suck") { if (ball.parent === mass) scene.attach(ball); phase = "kick"; kickFx.start({ snd, ui, onEnd: showNext }); }
+    if (phase === "suck") { if (ball.parent === mass) scene.attach(ball); phase = "kick"; kickFx.start({ snd, ui, onEnd: showNext }); preDraw(); }
   }
 
   // 때맞춰 나는 소리·진동·흔들림·멈칫
@@ -527,16 +546,15 @@ async function prepare() {
     if (t >= T.open + 0.12) once("clunk", () => { snd.clunk(); buzz(2); kick(0, 0.6, -170); });   // 쇠공 무게에 손이 출렁
   }
 
-  // 차기·저격·달리기가 끝나면 "다음" (영역전개 글자는 미리 거의 투명하게 그려 둠 · 큰 글꼴을 처음 그리는 순간 멈칫하지 않게)
-  function showNext() {
-    if (done) return; done = true; again.hidden = false; requestAnimationFrame(() => again.classList.add("on"));
-    const de = ui.querySelector(".cr-dom"); de.style.opacity = "0.004"; de.hidden = false;
-  }
+  // 영역전개 글자는 차기가 시작될 때 미리 거의 투명하게 그려 둠 (큰 글꼴을 처음 그리는 순간 멈칫하지 않게)
+  function preDraw() { const de = ui.querySelector(".cr-dom"); de.style.opacity = "0.004"; de.hidden = false; }
+  // 차기·저격·달리기가 끝나면 "다음" 없이 바로 영역전개
+  function showNext() { if (done) return; done = true; startDomain(); }
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
     const dtR = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60; last = now; tReal += dtR;
-    if (phase === "domain") { dom.tick(dtR); if (!closed) renderer.render(scene, cam); return; }
+    if (phase === "domain") { curDom.tick(dtR); if (!closed) renderer.render(scene, cam); return; }
     // 멈칫(히트스톱): 세게 쥐는 순간 시간이 아주 잠깐 거의 멈춤
     const tdt = freeze > 0 ? dtR * 0.04 : dtR; freeze -= dtR; tl += tdt;
     const t = st.debugT ?? tl;
@@ -563,7 +581,7 @@ async function prepare() {
     if (phase === "domain") return;
     again.classList.remove("on"); again.hidden = true; phase = "domain";
     kickFx.toDomain(); hand.root.visible = true;
-    dom.start({ snd, ui, frg: FRG, onRestore: () => { document.documentElement.classList.remove("crush-on"); onDone && onDone(); }, onEnd: finish });
+    curDom.start({ snd, sfx, ui, frg: FRG, onRestore: () => { document.documentElement.classList.remove("crush-on"); onDone && onDone(); }, onEnd: finish });
   };
   again.onclick = startDomain;
   if (import.meta.env.DEV) { st.kick = kickFx; st.devKick = () => { tl = Math.max(tl, T.lift - 0.05); }; }   // 시험용: 쇠공이 떨어지기 직전으로

@@ -139,7 +139,11 @@ void main(){
   const keyOff0 = key.position.clone().sub(key.target.position), keyOff1 = V(0.35, 1, 0.6).normalize().multiplyScalar(D * 1.6);   // 뒤에서 비춰 내 그림자가 앞에 드리움
   const fov0 = cam.fov;
   const sway = { yaw: 0, pitch: 0, vy: 0, vp: 0, rec: 0, rv: 0 };   // 조준경 흔들림 · 반동 (도)
-  const tr = { on: false, p0: V(), p1: V(), t0: 0, dur: 1, wake: 0, done: false };
+  const tr = { on: false, p0: V(), p1: V(), t0: 0, dur: 1, wake: 0, done: false, hit: false };
+  // 직접 조준: 끌어서 시선을 돌리고 톡 치면 발사 (공 가까이 겨누면 살짝 따라붙는 보정)
+  const AIM_TS = 0.25, HIT_R = 1.8, AUTO_AFTER = 16;
+  const aim = { dir: V(0, 0, -1), on: false, t0: 0, kicked: false, want: false, nextReal: 0, lastFire: -9, dx: 0, dy: 0, prev: V(), el: null, hint: null, btn: null, rack: 0, misses: 0, off: null };
+  const qa = new THREE.Quaternion(), qI = new THREE.Quaternion();
 
   // 공이 날아가는 위치 (차고 나서 dt초 뒤)
   const ballAt = (dt, out = V()) => out.set(P0.x, P0.y + (VY0 * dt - 0.5 * G_FLY * dt * dt) * U, P0.z - VZ0 * dt * U);
@@ -392,6 +396,11 @@ void main(){
     x.lineWidth = 2; x.strokeStyle = "rgba(255,70,40,.22)"; x.beginPath(); x.arc(cx + 0.8, cy, R - 2, 0, 6.283); x.stroke(); x.strokeStyle = "rgba(60,140,255,.22)"; x.beginPath(); x.arc(cx - 0.8, cy, R - 2, 0, 6.283); x.stroke();
     if (fired > 0) { g = x.createRadialGradient(cx, cy + R, 0, cx, cy + R, R * 1.1); g.addColorStop(0, `rgba(255,214,150,${0.9 * fired})`); g.addColorStop(1, "rgba(255,150,60,0)"); x.globalCompositeOperation = "lighter"; x.fillStyle = g; x.fillRect(cx - R, cy - R, R * 2, R * 2); x.globalCompositeOperation = "source-over"; }
     x.restore();
+    // 공이 조준경 밖이면 가장자리에 그쪽을 가리키는 화살표 (깜빡)
+    if (aim.arrow != null && a >= 1) { const an = aim.arrow, ax = cx + Math.cos(an) * (R - 34), ay = cy + Math.sin(an) * (R - 34), bl = 0.55 + 0.45 * Math.sin(tReal * 12);
+      x.save(); x.translate(ax, ay); x.rotate(an); x.fillStyle = `rgba(255,60,40,${bl})`; x.strokeStyle = "rgba(0,0,0,.6)"; x.lineWidth = 2; x.beginPath(); x.moveTo(20, 0); x.lineTo(-8, -15); x.lineTo(-2, 0); x.lineTo(-8, 15); x.closePath(); x.stroke(); x.fill(); x.restore(); }
+    // 명중 표시: 조준선 둘레에 하얀 X가 번쩍 (점점 벌어지며 사라짐)
+    if (impReal > 0 && tReal >= impReal && tReal - impReal < 0.55) { const u = (tReal - impReal) / 0.55, d0 = 16 + 26 * u, d1 = d0 + 22; x.lineCap = "round"; x.beginPath(); for (const [sx2, sy2] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { x.moveTo(cx + sx2 * d0, cy + sy2 * d0); x.lineTo(cx + sx2 * d1, cy + sy2 * d1); } x.strokeStyle = `rgba(255,255,255,${1 - u})`; x.lineWidth = 3.5; x.stroke(); x.strokeStyle = `rgba(255,70,50,${(1 - u) * 0.9})`; x.lineWidth = 1.5; x.stroke(); }
     // 접안렌즈 고무 테
     x.lineWidth = Math.max(6, R * 0.05); x.strokeStyle = "#0e0e0f"; x.beginPath(); x.arc(cx, cy, R + x.lineWidth / 2, 0, 6.283); x.stroke();
     x.lineWidth = 1; x.strokeStyle = "rgba(255,255,255,.07)"; x.beginPath(); x.arc(cx, cy, R + 2, Math.PI * 1.1, Math.PI * 1.6); x.stroke();
@@ -400,9 +409,8 @@ void main(){
   // ── 시간 흐름 (느린 화면) ──
   let fireReal = 0, tReal = 0, impReal = 0;
   function timeScale() {
-    if (k < K.pov + 0.45) return 1;
-    if (k < K.fire) return lerp(1, 0.72, sstep(seg(k, K.pov + 0.28, K.pov + 0.55)));
-    if (kImp === Infinity || k < kImp) return 0.065;
+    if (k < K.pov + 0.2) return 1;
+    if (kImp === Infinity) return tr.on && !tr.done && tr.hit ? 0.065 : lerp(1, AIM_TS, sstep(seg(k, K.pov + 0.2, K.pov + 0.6)));
     const u = tReal - impReal; if (u < 0.26) return 0.045;
     return lerp(0.045, 1, eIn(seg(u, 0.26, 0.78)));
   }
@@ -418,11 +426,15 @@ void main(){
       bv.y -= G_DROP * dt; bp.addScaledVector(bv, dt); ball.rotation.x += dt * 2;
       if (bp.y < FLOOR + rb) { bp.y = FLOOR + rb; const imp = -bv.y; if (imp > 160) { bv.y = imp * 0.36; snd.clang(Math.min(1, imp / 1100)); buzz(imp > 600 ? 2 : 1); puff(bp.x, bp.z, Math.round(imp / 140), 0.9 * U, 0.8, 0.5); shake = Math.max(shake, imp / 160); } else { bv.y = 0; bState = "rest"; } }
       ball.position.copy(bp);
-    } else if (bState === "rest") { ball.position.copy(P0); }
-    if (bState !== "fly" && k >= K.kick && bState !== "gone") {   // 뻥!
-      bState = "fly"; snd.kick(); buzz([3, 30, 2]); freeze = 0.07; shake = 9; puff(P0.x - 0.1 * U, P0.z + 0.05 * U, 9, 1.6 * U, 1, 0.7); puff(P0.x, P0.z, 6, 2.2 * U, 0.8, 0.4); snd.whoosh(1.1);
+    } else if (bState === "rest") { ball.position.copy(bp); }
+    if (!aim.kicked && k >= K.kick && bState !== "gone") {   // 뻥!
+      aim.kicked = true; bState = "fly"; snd.kick(); buzz([3, 30, 2]); freeze = 0.07; shake = 9; puff(P0.x - 0.1 * U, P0.z + 0.05 * U, 9, 1.6 * U, 1, 0.7); puff(P0.x, P0.z, 6, 2.2 * U, 0.8, 0.4); snd.whoosh(1.1);
     }
-    if (bState === "fly") { const d = k - K.kick; ballAt(d, ball.position); ball.rotation.x -= dt * 16; ball.rotation.z += dt * 3; }
+    if (bState === "fly") { const d = k - K.kick; ballAt(d, ball.position); ball.rotation.x -= dt * 16; ball.rotation.z += dt * 3;
+      if (d > 0.5 && ball.position.y < FLOOR + rb) { bState = "drop"; ball.position.y = FLOOR + rb; bp.copy(ball.position); bv.set(0, (VY0 - G_FLY * d) * U * 1.25, -VZ0 * U * 0.25); } }
+    if (aim.want) { aim.want = false; if (canFire()) shoot(false); }
+    if (aim.on && kImp === Infinity && !(tr.on && !tr.done) && tReal - aim.t0 > AUTO_AFTER) shoot(true);   // 너무 오래 안 쏘면 알아서
+    if (aim.rack && tReal >= aim.rack) { aim.rack = 0; snd.rack(); buzz(1); }
     if (bState !== "gone") { glint.position.copy(ball.position).add(V(-rb * 0.35, rb * 0.4, rb)); glint.material.opacity = bState === "fly" ? 0.5 : 0.3; }
     // ── 사람·총 ──
     const tgt = bState === "fly" ? ballAt(Math.max(0, k - K.kick) + 0.15, tmp2) : tr.on ? tr.p1 : null;
@@ -434,7 +446,7 @@ void main(){
       tracer.visible = true; tracer.position.copy(p); tracer.scale.setScalar(rb * 0.55); tracer.material.opacity = 0.95;
       const L = tr.p0.distanceTo(tr.p1), n = Math.floor((u * L - 2.5 * U) / (1.1 * U));
       while (tr.wake < Math.min(n, wakes.length)) { const m = wakes[tr.wake++]; m.visible = true; m.position.copy(tr.p0).lerp(tr.p1, (2.5 * U + tr.wake * 1.1 * U) / L); m.lookAt(tr.p1); m.userData.t = k; m.scale.setScalar(rb * 0.08); }
-      if (u >= 1) { tr.done = true; tracer.visible = false; impact(); }
+      if (u >= 1) { tr.done = true; tracer.visible = false; if (tr.hit) impact(); else if (tr.ground) { puff(tr.p1.x, tr.p1.z, 6, 0.9 * U, 0.9, 0.5); snd.tink(0.8); } }
     }
     for (const m of wakes) if (m.visible) { const a = (k - m.userData.t) / 0.06; m.scale.setScalar(rb * (0.05 + a * 0.22)); m.material.opacity = Math.max(0, 0.32 - a * 0.3); if (m.material.opacity <= 0) m.visible = false; }
     fragStep(dt);
@@ -477,26 +489,58 @@ void main(){
     if (k >= K.pov + 0.12) once("in", () => snd.breath(0));
     if (k >= K.pov + 0.4) once("out", () => snd.breath(1));
     for (let i = 0; i < 3; i++) if (k >= K.pov + 0.5 + i * 0.13) once("hb" + i, () => { snd.heart(); buzz(1); });
-    if (k >= K.fire) once("fire", fire);
     if (kExit < Infinity && k >= kExit) once("exit", () => { snd.rack(); casingOut(); });
     if (kExit < Infinity && k >= kExit + 0.45) once("sling", () => snd.cloth());
     if (kExit < Infinity && k >= kExit + 0.3) once("plan", planRun);   // 달려 나가기(kRun0) 전에 계획
     if (run && k >= kStop - 0.55) once("skid", () => { snd.skid(); puff(pathX, P0.z - runS(k) * U, 8, 1.2 * U, 1, 0.4); buzz(2); });
     if (run && k >= kStop + 0.15) once("exhale", () => snd.breath(1));
   }
-  function fire() {
-    const d = K.fire - K.kick, eye = eyeW.clone(), lead = V();
-    // 총알이 닿을 때 공이 있을 자리 (거리 / 총알 속도만큼 앞을 겨눔)
-    let tF = 0.02; for (let i = 0; i < 3; i++) { ballAt(d + tF, lead); tF = eye.distanceTo(lead) / (BUL * U); }
-    const muzzle = eye.clone().addScaledVector(aimW, 0.95 * U).add(V(0, -0.07 * U, 0));
-    Object.assign(tr, { on: true, p0: muzzle, p1: lead.clone(), t0: k, dur: tF, wake: 0, done: false });
-    impDir.copy(lead).sub(muzzle).normalize();
-    snd.sniper(); buzz([3, 40, 3, 60, 2]); sway.rv += 95; fireReal = tReal; shake = 3;
-    snd.whiz();
+  // 공이 dt초 뒤에 있을 자리 (날아가는 중이면 포물선, 땅에 있으면 그 자리)
+  const ballFut = (dt, out = V()) => { if (bState !== "fly") return out.copy(ball.position); ballAt(k - K.kick + dt, out); if (out.y < FLOOR + rb) out.y = FLOOR + rb; return out; };
+  const canFire = () => aim.on && kImp === Infinity && !(tr.on && !tr.done) && tReal >= aim.nextReal && k >= K.pov + 0.25;
+  function shoot(auto) {
+    const eye = camP.clone(), dir = fp.dir.clone().normalize(), lead = V();
+    // 총알이 닿을 때 공이 있을 자리 (거리 / 총알 속도만큼 앞)
+    let tF = 0.02; for (let i = 0; i < 3; i++) { ballFut(tF, lead); tF = eye.distanceTo(lead) / (BUL * U); }
+    const w = lead.clone().sub(eye), along = w.dot(dir), miss = w.clone().addScaledVector(dir, -along).length();
+    const hitIt = auto || (along > 0 && miss < rb * HIT_R);
+    if (auto) dir.copy(w).normalize();
+    const muzzle = eye.clone().addScaledVector(dir, 0.95 * U).add(V(0, -0.07 * U, 0));
+    let p1 = lead.clone(), ground = false, dur = tF;
+    if (!hitIt) {   // 빗나감: 겨눈 쪽으로 멀리 (땅에 맞으면 거기서 흙먼지)
+      let L = 70 * U; if (dir.y < -1e-3) { const g = (FLOOR - eye.y) / dir.y; if (g < L) { L = g; ground = true; } }
+      p1 = eye.clone().addScaledVector(dir, L); dur = L / (BUL * U);
+    }
+    Object.assign(tr, { on: true, p0: muzzle, p1, t0: k, dur, wake: 0, done: false, hit: hitIt, ground });
+    impDir.copy(p1).sub(muzzle).normalize();
+    snd.sniper(); buzz([3, 40, 3, 60, 2]); sway.rv += 95; fireReal = tReal; aim.lastFire = tReal; shake = 3;
+    if (hitIt) { snd.whiz(); aimUI(false); }
+    else { aim.misses++; aim.nextReal = tReal + 0.8; aim.rack = tReal + 0.38; setTimeout(() => snd && snd.whiz(), 60); if (aim.hint) { aim.hint.textContent = "빗나갔다! 다시 겨눠서 톡"; aim.hint.classList.add("miss"); clearTimeout(aim.hT); aim.hT = setTimeout(() => aim.hint && aim.hint.classList.remove("miss"), 900); } }
+  }
+  // 조준 화면 위 손놀림: 끌면 시선이 돌아가고, 짧게 톡 치면 발사 · 스페이스/엔터도 발사
+  function aimUI(show) {
+    if (show && !aim.el) {
+      const el = document.createElement("div"); el.className = "cr-aim";
+      el.innerHTML = '<p class="cr-hint">끌어서 조준 · 톡 치면 발사</p><button class="cr-fire" aria-label="발사"></button>';
+      ui.append(el); aim.el = el; aim.hint = el.querySelector(".cr-hint"); aim.btn = el.querySelector(".cr-fire");
+      requestAnimationFrame(() => el.classList.add("on"));
+      let down = null;
+      const mv = e => { if (!down) return; const ddx = e.clientX - down.lx, ddy = e.clientY - down.ly; aim.dx += ddx; aim.dy += ddy; down.lx = e.clientX; down.ly = e.clientY; down.m += Math.hypot(ddx, ddy); };
+      el.addEventListener("pointerdown", e => { if (e.target === aim.btn) return; e.preventDefault(); down = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), m: 0 }; try { el.setPointerCapture(e.pointerId); } catch (_) {} });
+      el.addEventListener("pointermove", mv);
+      const up = e => { if (!down) return; const tap = down.m < 14 && performance.now() - down.t < 380; down = null; if (tap && e.type === "pointerup") aim.want = true; };
+      el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+      aim.btn.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); aim.want = true; });
+      const kd = e => { if (e.code === "Space" || e.key === "Enter") { e.preventDefault(); aim.want = true; } };
+      addEventListener("keydown", kd); aim.off = () => removeEventListener("keydown", kd);
+    } else if (!show && aim.el) {
+      const el = aim.el; aim.el = aim.hint = aim.btn = null; if (aim.off) { aim.off(); aim.off = null; }
+      el.classList.remove("on"); el.style.pointerEvents = "none"; setTimeout(() => el.remove(), 400);
+    }
   }
   function impact() {
+    const vb = bState === "fly" ? V(0, (VY0 - G_FLY * (k - K.kick)) * U, -VZ0 * U) : V(); impP.copy(tr.p1);
     kImp = k; impReal = tReal; bState = "gone"; ball.visible = false; glint.visible = false;
-    const vb = V(0, (VY0 - G_FLY * (k - K.kick)) * U, -VZ0 * U); impP.copy(tr.p1);
     burst(impP, vb, impDir); if (sparkSys) sparkSys.fire(impP, impDir);
     c.flash(impP); snd.impact(); buzz([3, 40, 3, 40, 3]);
     kExit = kImp + 0.46; kRun0 = kExit + 0.48;
@@ -520,14 +564,30 @@ void main(){
     if (k >= K.pov && k < kExit) {    // 조준경
       scope = 1; povT += dtR; fired = Math.max(0, 1 - (tReal - fireReal) / 0.12) * (fireReal > 0 ? 1 : 0);
       // 숨 쉬는 흔들림 (숨 참으면 거의 멈춤) + 손떨림 + 반동(용수철)
-      const hold = sstep(seg(k, K.pov + 0.42, K.pov + 0.64)) * (fireReal ? 0 : 1), A = lerp(0.32, 0.05, hold), tt = tReal;
+      const hold = sstep(seg(k, K.pov + 0.42, K.pov + 0.64)) * clamp((tReal - aim.lastFire - 0.25) / 0.6, 0, 1), A = lerp(0.32, 0.05, hold), tt = tReal;
       const sy = Math.sin(tt * 1.7) * A * 0.6 + Math.sin(tt * 5.3) * 0.02, sp = Math.sin(tt * 3.4) * A * 0.45 + Math.sin(tt * 7.1) * 0.015;
       sway.rv += (-90 * sway.rec - 11 * sway.rv) * dtR; sway.rec += sway.rv * dtR;
       sway.yaw = sy; sway.pitch = sp + sway.rec * 0.22;
-      const tgt = kImp < Infinity ? impP.clone().lerp(fragCenter(), clamp((k - kImp) / 0.5, 0, 1) * 0.7) : bState === "fly" ? ballAt(k - K.kick, V()) : impP.clone();
-      const catchUp = 1 - eOut(seg(k, K.pov, K.pov + 0.45));   // 처음엔 공을 늦게 따라잡음
-      if (catchUp > 0) tgt.add(V(0, catchUp * 1.6 * U, catchUp * 1.2 * U));
-      dir.copy(tgt).sub(eye).normalize(); const right = V().crossVectors(dir, up).normalize(), upv = V().crossVectors(right, dir);
+      const fovS = 4.2 * (vh / (2 * Math.min(vw, vh) * 0.46));
+      if (kImp < Infinity || (tr.on && !tr.done && tr.hit)) {   // 맞힌 뒤엔 맞은 자리 → 파편 쪽으로 저절로
+        const tgt = kImp < Infinity ? impP.clone().lerp(fragCenter(), clamp((k - kImp) / 0.5, 0, 1) * 0.7) : tr.p1.clone();
+        aim.dir.lerp(tgt.sub(eye).normalize(), 1 - Math.exp(-dtR * 5)).normalize();
+      } else {
+        const bd = ballFut(0, V()).sub(eye).normalize();
+        if (!aim.on) { aim.on = true; aim.t0 = tReal; aim.prev.copy(bd); aimUI(true); }
+        // 처음엔 공을 늦게 따라잡음 (공이 아래에서 올라오며 조준선에 들어옴) → 그다음부턴 내 손으로
+        const catchUp = 1 - eOut(seg(k, K.pov, K.pov + 0.45));
+        if (catchUp > 0) { aim.dir.copy(ballFut(0, V()).add(V(0, catchUp * 1.6 * U, catchUp * 1.2 * U)).sub(eye).normalize()); aim.dx = aim.dy = 0; }
+        // 끈 만큼 돌림 (손가락을 오른쪽으로 → 오른쪽을 봄)
+        const sc = THREE.MathUtils.degToRad(fovS) / vh;
+        if (aim.dx || aim.dy) { const rt = V().crossVectors(aim.dir, up).normalize(); aim.dir.applyAxisAngle(up, -aim.dx * sc).applyAxisAngle(rt, -aim.dy * sc).normalize(); aim.dx = aim.dy = 0; }
+        // 공 가까이 겨누고 있으면 공이 움직인 만큼 같이 따라감 (완전히는 아님)
+        const ang = aim.dir.angleTo(bd), near = 1 - sstep(clamp((ang - THREE.MathUtils.degToRad(fovS * 0.3)) / THREE.MathUtils.degToRad(fovS * 0.5), 0, 1));
+        if (near > 0) aim.dir.applyQuaternion(qa.setFromUnitVectors(aim.prev, bd).slerp(qI, 1 - 0.93 * near)).normalize();
+        aim.prev.copy(bd);
+        if (aim.dir.y < -0.5) { aim.dir.y = -0.5; aim.dir.normalize(); } if (aim.dir.y > 0.85) { aim.dir.y = 0.85; aim.dir.normalize(); }
+      }
+      dir.copy(aim.dir); const right = V().crossVectors(dir, up).normalize(), upv = V().crossVectors(right, dir);
       dir.addScaledVector(right, Math.tan(THREE.MathUtils.degToRad(sway.yaw))).addScaledVector(upv, Math.tan(THREE.MathUtils.degToRad(sway.pitch))).normalize();
       p.copy(eye); fov = 4.2 * (vh / (2 * Math.min(vw, vh) * 0.46)); povIn = seg(povT, 0, 0.28);
       fp.dir.copy(dir);
@@ -564,6 +624,8 @@ void main(){
     shake *= Math.exp(-dtR * 9);
     p.add(V(rnd(-1, 1), rnd(-1, 1), 0).multiplyScalar(shake * (scope ? 0.15 : 0.5)));
     cam.up.copy(up).applyAxisAngle(dir, roll); cam.position.copy(p); cam.lookAt(tmp.copy(p).add(dir)); camP.copy(p);
+    aim.arrow = null;
+    if (scope && aim.on && kImp === Infinity && bState !== "gone") { cam.updateMatrixWorld(); const pp = ball.position.clone().project(cam), x = pp.x * vw / 2, y = -pp.y * vh / 2, R0 = Math.min(vw, vh) * 0.46; if (pp.z > 1 || Math.hypot(x, y) > R0 * 0.92) aim.arrow = pp.z > 1 ? Math.atan2(-y, -x) : Math.atan2(y, x); }
     if (sx) drawScope(scope ? povIn : 0, fired, scope ? 0 : black);
   }
   const fc0 = V();
@@ -573,10 +635,10 @@ void main(){
     warm, K, devStop: null,
     get k() { return k; }, get phase() { return k < K.pov ? "kick" : k < kExit ? "scope" : k < kEnd ? "run" : "end"; },
     start(o) {
-      snd = o.snd; ui = o.ui; done = o.onEnd; on = true; k = 0; tReal = 0; hit.clear(); man.B.head.visible = false; fp.init = false;   // 1인칭: 내 머리는 안 그림 wall0 = wall.material.opacity;
+      snd = o.snd; ui = o.ui; done = o.onEnd; on = true; k = 0; tReal = 0; impReal = 0; fireReal = 0; hit.clear(); man.B.head.visible = false; fp.init = false;   // 1인칭: 내 머리는 안 그림 wall0 = wall.material.opacity;
       B0.copy(ball.getWorldPosition(V())); bp.copy(B0); bv.set(0, -40, 0); bState = "drop";
       P0.set(B0.x, FLOOR + rb, B0.z); pathX = P0.x - 0.1 * U;
-      planApproach(); run = null; kImp = kExit = kRun0 = kStop = kEnd = Infinity;
+      planApproach(); run = null; kImp = kExit = kRun0 = kStop = kEnd = Infinity; Object.assign(aim, { on: false, kicked: false, want: false, nextReal: 0, lastFire: -9, dx: 0, dy: 0, rack: 0, misses: 0 }); tr.on = false;
       scv = document.createElement("canvas"); scv.className = "cr-scope"; scv.width = Math.round(vw * PR); scv.height = Math.round(vh * PR); ui.prepend(scv); sx = scv.getContext("2d");
     },
     tick,
@@ -590,7 +652,7 @@ void main(){
       key.target.position.set(0, 0, 0); key.position.copy(keyOff0);
       cam.fov = fov0; cam.near = 20; cam.up.set(0, 1, 0); cam.updateProjectionMatrix();
       cam.position.set(0, 0, D); cam.lookAt(0, 0, 0);
-      if (scv) { scv.remove(); scv = sx = null; }
+      if (scv) { scv.remove(); scv = sx = null; } aimUI(false);
     },
   };
   return api;
